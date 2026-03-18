@@ -1,45 +1,63 @@
 /**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
+ * NotioX – Note-taking app (Android)
  * @format
  */
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
-
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
-    </SafeAreaProvider>
-  );
-}
+import React, { useState } from 'react';
+import { StatusBar, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { AppProvider, useApp } from './src/context/AppContext';
+import { FeaturesProvider } from './src/context/FeaturesContext';
+import { AppNavigator } from './src/navigation/AppNavigator';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { AppLoading } from './src/components/AppLoading';
+import { AppLockScreen } from './src/screens/AppLockScreen';
 
 function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
+  const { isHydrated, settings } = useApp();
+  const { isDark } = useTheme();
+  const [unlocked, setUnlocked] = useState(false);
+
+  const needsLock = settings.appLockEnabled && settings.appLockPin && !unlocked;
 
   return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
+    <>
+      <StatusBar
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        backgroundColor="transparent"
       />
-    </View>
+      {!isHydrated ? (
+        <AppLoading />
+      ) : needsLock ? (
+        <AppLockScreen correctPin={settings.appLockPin!} onUnlock={() => setUnlocked(true)} />
+      ) : (
+        <View style={{ flex: 1 }}>
+          <AppNavigator />
+        </View>
+      )}
+    </>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
+function App() {
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" />
+        <ErrorBoundary>
+          <ThemeProvider>
+            <AppProvider>
+              <FeaturesProvider>
+                <AppContent />
+              </FeaturesProvider>
+            </AppProvider>
+          </ThemeProvider>
+        </ErrorBoundary>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
+  );
+}
 
 export default App;

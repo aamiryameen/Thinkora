@@ -1,4 +1,33 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# NotioX
+
+A full-featured note-taking app for **Android** (React Native), with rich text, folders, tags, reminders, and attachments.
+
+## Features (Android)
+
+- **Notes**: Create, edit, delete; rich text (bold, italic, underline, lists); tags; search by title, content, tags; sort (date, title, tags); favorites & pinned; auto-save; undo/redo.
+- **Organization**: Folders and sub-folders; nested tags; smart categories (Work, Personal, Ideas, To-Dos).
+- **Reminders**: Time-based reminders (Notifee); repeat (daily/weekly); smart suggestions (e.g. In 1 hour, Tomorrow 9:00).
+- **Attachments**: Photos & camera; documents & PDFs; voice memos (record in-app); handwritten sketches; file picker.
+- **Voice**: Voice typing / speech-to-text in the note editor (Android).
+
+**Note**: This app targets Android. Some features (e.g. rich editor, voice, reminders) are implemented only on Android; on iOS the app still runs with a simplified editor and no voice/Notifee.
+
+### Codebase
+
+The project uses a **clean, layered structure** suitable for production and a large audience:
+
+- **`src/core/`** – Constants and design system (theme, colors, spacing). No magic numbers in features.
+- **`src/navigation/`** – Typed navigation params and navigator setup.
+- **`src/context/`** – Global state (notes, folders, tags, reminders) with persistence.
+- **`src/services/`** – Storage, reminders (Notifee), voice, attachments (platform-specific where needed).
+- **`src/components/`** – Reusable UI; **`src/screens/`** – Full-screen views.
+- **Error boundary** and **loading state** so the app degrades gracefully on errors and shows a loading screen until data is hydrated.
+
+See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for conventions and scaling notes.
+
+---
+
+This is a [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
 # Getting Started
 
