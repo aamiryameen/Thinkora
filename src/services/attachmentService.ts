@@ -1,21 +1,42 @@
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid, Alert } from 'react-native';
+import type { NoteAttachment, AttachmentType } from '../types';
+import { generateId } from '../utils/id';
 
-let ImagePicker: typeof import('react-native-image-picker') | null = null;
-let DocPicker: { pick: (opts?: { type?: string[] }) => Promise<Array<{ uri: string; name?: string; type?: string }>>; keepLocalCopy: (opts: { files: Array<{ uri: string; fileName: string }>; destination: string }) => Promise<Array<{ status: string; localUri?: string }>> } | null = null;
-let RNFS: typeof import('react-native-fs') | null = null;
+// react-native-image-picker v7 uses named exports (no .default)
+let launchImageLibrary: typeof import('react-native-image-picker').launchImageLibrary | null = null;
+let launchCamera: typeof import('react-native-image-picker').launchCamera | null = null;
+let DocPicker: {
+  pick: (opts?: { type?: string[] }) => Promise<Array<{ uri: string; name?: string; type?: string }>>;
+  keepLocalCopy: (opts: { files: Array<{ uri: string; fileName: string }>; destination: string }) => Promise<Array<{ status: string; localUri?: string }>>;
+} | null = null;
+let RNFS: {
+  CachesDirectory: string;
+  mkdir: (path: string) => Promise<void>;
+  writeFile: (path: string, data: string, encoding: string) => Promise<void>;
+} | null = null;
 
 if (Platform.OS === 'android') {
-  ImagePicker = require('react-native-image-picker').default;
+  try {
+    const ip = require('react-native-image-picker');
+    launchImageLibrary = ip.launchImageLibrary;
+    launchCamera = ip.launchCamera;
+  } catch {
+    launchImageLibrary = null;
+    launchCamera = null;
+  }
   try {
     DocPicker = require('@react-native-documents/picker');
   } catch {
     DocPicker = null;
   }
-  RNFS = require('react-native-fs').default;
+  try {
+    const fs = require('react-native-fs');
+    // supports both default export and named export
+    RNFS = fs.default ?? fs;
+  } catch {
+    RNFS = null;
+  }
 }
-
-import type { NoteAttachment, AttachmentType } from '../types';
-import { generateId } from '../utils/id';
 
 export interface PickImageResult {
   uri: string;
@@ -23,11 +44,54 @@ export interface PickImageResult {
   type: 'photo' | 'camera';
 }
 
+async function requestCameraPermission(): Promise<boolean> {
+  try {
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      {
+        title: 'Camera Permission',
+        message: 'This app needs camera access to take photos.',
+        buttonPositive: 'Allow',
+        buttonNegative: 'Deny',
+      },
+    );
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
+async function requestStoragePermission(): Promise<boolean> {
+  try {
+    // Android 13+ uses READ_MEDIA_IMAGES, older uses READ_EXTERNAL_STORAGE
+    const permission =
+      parseInt(Platform.Version as string, 10) >= 33
+        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
+    const result = await PermissionsAndroid.request(permission, {
+      title: 'Storage Permission',
+      message: 'This app needs access to your photos.',
+      buttonPositive: 'Allow',
+      buttonNegative: 'Deny',
+    });
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
 export async function pickImageFromGallery(): Promise<PickImageResult | null> {
-  if (Platform.OS !== 'android' || !ImagePicker) return null;
+  if (Platform.OS !== 'android' || !launchImageLibrary) return null;
+
+  const granted = await requestStoragePermission();
+  if (!granted) {
+    Alert.alert('Permission Denied', 'Storage permission is required to pick photos.');
+    return null;
+  }
+
   return new Promise((resolve) => {
-    ImagePicker!.launchImageLibrary(
-      { mediaType: 'photo', includeBase64: false },
+    launchImageLibrary!(
+      { mediaType: 'photo', includeBase64: false, quality: 0.8 },
       (res) => {
         if (res.didCancel || res.errorCode || !res.assets?.[0]) {
           resolve(null);
@@ -36,19 +100,26 @@ export async function pickImageFromGallery(): Promise<PickImageResult | null> {
         const asset = res.assets[0];
         resolve({
           uri: asset.uri ?? '',
-          name: asset.fileName ?? undefined,
+          name: asset.fileName ?? `photo_${Date.now()}.jpg`,
           type: 'photo',
         });
-      }
+      },
     );
   });
 }
 
 export async function takePhoto(): Promise<PickImageResult | null> {
-  if (Platform.OS !== 'android' || !ImagePicker) return null;
+  if (Platform.OS !== 'android' || !launchCamera) return null;
+
+  const granted = await requestCameraPermission();
+  if (!granted) {
+    Alert.alert('Permission Denied', 'Camera permission is required to take photos.');
+    return null;
+  }
+
   return new Promise((resolve) => {
-    ImagePicker!.launchCamera(
-      { mediaType: 'photo', saveToPhotos: false },
+    launchCamera!(
+      { mediaType: 'photo', saveToPhotos: false, quality: 0.8 },
       (res) => {
         if (res.didCancel || res.errorCode || !res.assets?.[0]) {
           resolve(null);
@@ -57,10 +128,10 @@ export async function takePhoto(): Promise<PickImageResult | null> {
         const asset = res.assets[0];
         resolve({
           uri: asset.uri ?? '',
-          name: asset.fileName ?? undefined,
+          name: asset.fileName ?? `camera_${Date.now()}.jpg`,
           type: 'camera',
         });
-      }
+      },
     );
   });
 }
@@ -79,50 +150,25 @@ export async function pickDocument(): Promise<{
       files: [{ uri: file.uri, fileName: file.name ?? 'document' }],
       destination: 'documentDirectory',
     });
-    const uri = copyResult?.status === 'success' && copyResult.localUri ? copyResult.localUri : file.uri;
+    const uri =
+      copyResult?.status === 'success' && copyResult.localUri
+        ? copyResult.localUri
+        : file.uri;
     const name = file.name ?? 'document';
     const mime = file.type ?? undefined;
     let type: AttachmentType = 'file';
     if (mime?.startsWith('image/')) type = 'photo';
     else if (mime === 'application/pdf') type = 'pdf';
-    else if (mime?.startsWith('audio/')) type = 'file';
     return { uri, name, mimeType: mime, type };
   } catch {
     return null;
   }
 }
 
-export async function pickMultipleDocuments(): Promise<
-  { uri: string; name: string; mimeType?: string; type: AttachmentType }[]
-> {
-  if (Platform.OS !== 'android' || !DocPicker) return [];
-  try {
-    const files = await DocPicker.pick();
-    if (files.length === 0) return [];
-    const copyResults = await DocPicker.keepLocalCopy({
-      files: files.map((f) => ({ uri: f.uri, fileName: f.name ?? 'document' })),
-      destination: 'documentDirectory',
-    });
-    return files.map((file, i) => {
-      const res = copyResults[i];
-      const uri = res?.status === 'success' && res.localUri ? res.localUri : file.uri;
-      const name = file.name ?? 'document';
-      const mime = file.type ?? undefined;
-      let type: AttachmentType = 'file';
-      if (mime?.startsWith('image/')) type = 'photo';
-      else if (mime === 'application/pdf') type = 'pdf';
-      else if (mime?.startsWith('audio/')) type = 'file';
-      return { uri, name, mimeType: mime, type };
-    });
-  } catch {
-    return [];
-  }
-}
-
 export function attachmentToNoteAttachment(
   item:
     | PickImageResult
-    | { uri: string; name: string; mimeType?: string; type: AttachmentType }
+    | { uri: string; name: string; mimeType?: string; type: AttachmentType },
 ): NoteAttachment {
   const now = Date.now();
   const type: AttachmentType = 'type' in item ? item.type : 'photo';
@@ -142,13 +188,15 @@ export function getAttachmentDirectory(): string | null {
 
 export async function saveSketchToFile(base64Data: string): Promise<string | null> {
   if (Platform.OS !== 'android' || !RNFS) return null;
-  const dir = RNFS.CachesDirectory + '/sketches';
+  // react-native-signature-canvas returns "data:image/png;base64,<data>"
+  const raw = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  if (!raw) return null;
+  // Write directly to CachesDirectory — no subdirectory to avoid mkdir rejection bug
+  const path = `${RNFS.CachesDirectory}/sketch-${Date.now()}.png`;
   try {
-    await RNFS.mkdir(dir);
+    await RNFS.writeFile(path, raw, 'base64');
+    return `file://${path}`;
   } catch {
-    // exists
+    return null;
   }
-  const path = `${dir}/sketch-${Date.now()}.png`;
-  await RNFS.writeFile(path, base64Data, 'base64');
-  return path;
 }

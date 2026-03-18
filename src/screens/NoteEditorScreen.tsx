@@ -7,7 +7,10 @@ import {
   ScrollView,
   Alert,
   Platform,
+  Modal,
+  Pressable,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RichNoteEditor, RichNoteEditorHandle } from '../components/RichNoteEditor';
@@ -79,10 +82,11 @@ export function NoteEditorScreen() {
     history: [initialEntry],
     index: 0,
   });
-  const { history, historyIndex } = historyState;
+  const { history, index: historyIndex } = historyState;
   const richEditorRef = useRef<RichNoteEditorHandle>(null);
   const isRestoringFromHistory = useRef(false);
   const [sketchModal, setSketchModal] = useState(false);
+  const [attachMenuVisible, setAttachMenuVisible] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   /** On Android we use date then time (two steps) to avoid crash when dismissing mode="datetime". */
   const [pickerStep, setPickerStep] = useState<'date' | 'time'>('date');
@@ -243,44 +247,16 @@ export function NoteEditorScreen() {
   }, []);
 
   const showAttachMenu = useCallback(() => {
-    const options: Parameters<typeof Alert.alert>[2] = [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Photo from gallery',
-        onPress: async () => {
-          const r = await pickImageFromGallery();
-          if (r) addAttachment(attachmentToNoteAttachment(r));
-        },
-      },
-      {
-        text: 'Take photo',
-        onPress: async () => {
-          const r = await takePhoto();
-          if (r) addAttachment(attachmentToNoteAttachment(r));
-        },
-      },
-      {
-        text: 'Document / PDF',
-        onPress: async () => {
-          const r = await pickDocument();
-          if (r) addAttachment(attachmentToNoteAttachment(r));
-        },
-      },
-      {
-        text: 'Sketch',
-        onPress: () => setSketchModal(true),
-      },
-    ];
-    Alert.alert('Add attachment', undefined, options);
-  }, [addAttachment]);
+    setAttachMenuVisible(true);
+  }, []);
 
   const handleSketchSave = useCallback(
-    async (base64: string) => {
-      const path = await saveSketchToFile(base64);
-      if (path)
-        addAttachment(
-          attachmentToNoteAttachment({ uri: path, name: 'sketch.png', type: 'sketch' })
-        );
+    (base64: string) => {
+      // Use data URI directly — no file write needed, Image supports data URIs on Android
+      const dataUri = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
+      addAttachment(
+        attachmentToNoteAttachment({ uri: dataUri, name: 'sketch.png', type: 'sketch' })
+      );
     },
     [addAttachment]
   );
@@ -415,245 +391,456 @@ export function NoteEditorScreen() {
 
   const categories: SmartCategory[] = ['work', 'personal', 'ideas', 'todos', 'none'];
 
+  const CATEGORY_META: Record<SmartCategory, { emoji: string; color: string; bg: string }> = {
+    work:     { emoji: '💼', color: '#3B82F6', bg: '#3B82F615' },
+    personal: { emoji: '🌿', color: '#10B981', bg: '#10B98115' },
+    ideas:    { emoji: '💡', color: '#F59E0B', bg: '#F59E0B15' },
+    todos:    { emoji: '✅', color: '#8B5CF6', bg: '#8B5CF615' },
+    none:     { emoji: '📝', color: '#6B7280',  bg: '#6B728015' },
+  };
+
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        container: { flex: 1, backgroundColor: theme.colors.surface },
+        container: { flex: 1, backgroundColor: theme.colors.background },
+
+        /* ── Header ──────────────────────────────── */
         header: {
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
           paddingHorizontal: theme.spacing.lg,
           paddingTop: insets.top + theme.spacing.sm,
           paddingBottom: theme.spacing.md,
-          backgroundColor: theme.colors.surfaceElevated,
-          borderBottomWidth: 2,
+          backgroundColor: theme.colors.surface,
+          borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: theme.colors.border,
         },
-        headerActions: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
-        scroll: { flex: 1 },
-        section: {
-          paddingHorizontal: theme.spacing.lg,
-          paddingVertical: theme.spacing.md,
+        headerTopRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: theme.spacing.xs,
         },
-        sectionLabel: {
+        backBtn: {
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.colors.inputBg,
+        },
+        headerActions: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+        saveBtn: {
+          backgroundColor: theme.colors.primary,
+          borderRadius: theme.borderRadius.lg,
+          paddingVertical: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.lg,
+        },
+        saveBtnText: {
+          ...theme.typography.button,
+          color: '#FFF',
+        },
+        headerIconBtn: {
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.colors.inputBg,
+        },
+        headerIconBtnDisabled: { opacity: 0.25 },
+        headerMeta: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          marginTop: theme.spacing.xs,
+        },
+        categoryBadge: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 4,
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+          borderRadius: theme.borderRadius.full,
+        },
+        categoryBadgeText: {
+          fontSize: 12,
+          fontWeight: '600',
+        },
+        headerDot: {
+          width: 3,
+          height: 3,
+          borderRadius: 2,
+          backgroundColor: theme.colors.textDisabled,
+        },
+        headerDateText: {
+          ...theme.typography.caption,
+          color: theme.colors.textMuted,
+        },
+
+        /* ── Scroll / cards ──────────────────────── */
+        scroll: { flex: 1 },
+        editorCard: {
+          marginHorizontal: theme.spacing.lg,
+          marginTop: theme.spacing.lg,
+          borderRadius: theme.borderRadius.xl,
+          backgroundColor: theme.colors.cardBg,
+          overflow: 'hidden',
+          ...theme.shadows.card,
+        },
+
+        /* ── Section title (like Dashboard "Features") ── */
+        sectionTitle: {
           ...theme.typography.overline,
           color: theme.colors.textMuted,
           textTransform: 'uppercase',
           letterSpacing: 1,
           marginBottom: theme.spacing.sm,
+          marginLeft: theme.spacing.xs,
+          marginTop: theme.spacing.lg,
+          marginHorizontal: theme.spacing.lg,
         },
-        tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-        tagChip: {
+
+        /* ── Meta card ───────────────────────────── */
+        metaCard: {
+          marginHorizontal: theme.spacing.lg,
+          borderRadius: theme.borderRadius.xl,
+          backgroundColor: theme.colors.cardBg,
+          overflow: 'hidden',
+          ...theme.shadows.card,
+        },
+        section: {
           paddingHorizontal: theme.spacing.lg,
-          paddingVertical: 8,
-          borderRadius: theme.borderRadius.full,
-          backgroundColor: theme.colors.inputBg,
-          borderWidth: 2,
-          borderColor: 'transparent',
+          paddingVertical: theme.spacing.md,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.border,
         },
-        tagChipSelected: {
-          backgroundColor: theme.colors.primary,
-          borderColor: theme.colors.primaryDark,
-        },
-        tagText: { ...theme.typography.bodySmall, color: theme.colors.text, fontWeight: '500' },
-        tagTextSelected: { color: theme.colors.surface },
-        reminderText: {
-          ...theme.typography.bodySmall,
-          color: theme.colors.primary,
-          fontWeight: '600',
-        },
-        reminderSubtext: {
-          ...theme.typography.caption,
-          color: theme.colors.textMuted,
-          marginTop: theme.spacing.xxs,
-        },
-        smartRow: {
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          marginTop: theme.spacing.sm,
-          gap: theme.spacing.sm,
-        },
-        smartChip: {
-          paddingVertical: 8,
-          paddingHorizontal: theme.spacing.lg,
-          backgroundColor: theme.colors.primaryLight,
-          borderRadius: theme.borderRadius.full,
-        },
-        smartChipText: { ...theme.typography.caption, color: theme.colors.primaryDark, fontWeight: '600' },
-        repeatRow: {
+        sectionLast: { borderBottomWidth: 0 },
+        sectionHeader: {
           flexDirection: 'row',
           alignItems: 'center',
-          marginTop: theme.spacing.sm,
-          flexWrap: 'wrap',
+          gap: theme.spacing.sm,
+          marginBottom: theme.spacing.sm,
+        },
+        sectionIconWrap: {
+          width: 32,
+          height: 32,
+          borderRadius: 10,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        sectionLabel: {
+          ...theme.typography.body,
+          color: theme.colors.text,
+          fontWeight: '600',
+          flex: 1,
+        },
+
+        /* ── Category grid ───────────────────────── */
+        categoryGrid: {
+          flexDirection: 'row',
           gap: theme.spacing.sm,
         },
-        repeatLabel: {
-          ...theme.typography.bodySmall,
-          color: theme.colors.textSecondary,
+        categoryGridItem: {
+          flex: 1,
+          borderRadius: theme.borderRadius.lg,
+          paddingVertical: 10,
+          alignItems: 'center',
+          gap: 4,
+          borderWidth: 1.5,
+          borderColor: 'transparent',
         },
-        repeatChip: {
-          paddingVertical: theme.spacing.xs,
+        categoryGridItemSelected: {
+          borderColor: theme.colors.primary,
+        },
+        categoryGridEmoji: { fontSize: 18 },
+        categoryGridText: {
+          ...theme.typography.caption,
+          fontWeight: '600',
+          textTransform: 'capitalize',
+        },
+
+        /* ── Tags ────────────────────────────────── */
+        chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+        chip: {
+          paddingHorizontal: theme.spacing.md,
+          paddingVertical: 6,
+          borderRadius: theme.borderRadius.full,
+          backgroundColor: theme.colors.inputBg,
+          borderWidth: 1.5,
+          borderColor: 'transparent',
+        },
+        chipSelected: {
+          backgroundColor: theme.colors.primaryLight,
+          borderColor: theme.colors.primary,
+        },
+        chipText: { ...theme.typography.bodySmall, color: theme.colors.text, fontWeight: '500' },
+        chipTextSelected: { color: theme.colors.primary, fontWeight: '700' },
+
+        /* ── Reminder ────────────────────────────── */
+        reminderBtn: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.xs,
+          paddingVertical: 8,
+          paddingHorizontal: theme.spacing.md,
+          borderRadius: theme.borderRadius.full,
+          backgroundColor: theme.colors.primaryLight,
+          alignSelf: 'flex-start',
+          marginBottom: theme.spacing.sm,
+        },
+        reminderBtnText: { ...theme.typography.bodySmall, color: theme.colors.primary, fontWeight: '600' },
+        reminderActiveRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          paddingVertical: 10,
           paddingHorizontal: theme.spacing.md,
           borderRadius: theme.borderRadius.lg,
+          backgroundColor: theme.colors.primaryLight,
+        },
+        reminderActiveText: { ...theme.typography.bodySmall, color: theme.colors.primary, fontWeight: '600', flex: 1 },
+        reminderRemove: { ...theme.typography.caption, color: theme.colors.error, fontWeight: '700' },
+        quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginBottom: theme.spacing.sm },
+        quickChip: {
+          paddingVertical: 6,
+          paddingHorizontal: theme.spacing.md,
           backgroundColor: theme.colors.inputBg,
+          borderRadius: theme.borderRadius.full,
+        },
+        quickChipText: { ...theme.typography.bodySmall, color: theme.colors.text, fontWeight: '500' },
+        repeatRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, flexWrap: 'wrap' },
+        repeatLabel: { ...theme.typography.bodySmall, color: theme.colors.textMuted, fontWeight: '500' },
+
+        bottomPad: { height: 80 },
+
+        /* ── Attachment bottom sheet ─────────────── */
+        attachOverlay: {
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.55)',
+          justifyContent: 'flex-end',
+        },
+        attachSheet: {
+          backgroundColor: theme.colors.cardBg,
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          paddingBottom: insets.bottom + 12,
+          paddingTop: 8,
+          ...theme.shadows.card,
+        },
+        attachHandle: {
+          width: 40,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: theme.colors.border,
+          alignSelf: 'center',
+          marginBottom: 12,
+        },
+        attachTitle: {
+          ...theme.typography.title,
+          fontSize: 16,
+          fontWeight: '700',
+          color: theme.colors.text,
+          paddingHorizontal: theme.spacing.lg,
+          marginBottom: 8,
+        },
+        attachOption: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingVertical: 14,
+          paddingHorizontal: theme.spacing.lg,
+          gap: theme.spacing.md,
+        },
+        attachOptionIcon: {
+          width: 44,
+          height: 44,
+          borderRadius: 14,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        attachOptionLabel: {
+          ...theme.typography.body,
+          color: theme.colors.text,
+          fontWeight: '500',
+        },
+        attachOptionDesc: {
+          ...theme.typography.caption,
+          color: theme.colors.textMuted,
+        },
+        attachCancelBtn: {
+          marginHorizontal: theme.spacing.lg,
+          marginTop: 8,
+          paddingVertical: 14,
+          borderRadius: theme.borderRadius.lg,
+          backgroundColor: theme.colors.inputBg,
+          alignItems: 'center',
+        },
+        attachCancelText: {
+          ...theme.typography.body,
+          color: theme.colors.text,
+          fontWeight: '600',
         },
       }),
-    [theme, insets.top]
+    [theme, insets.top, insets.bottom]
   );
+
+  const catMeta = CATEGORY_META[category];
 
   return (
     <View style={styles.container}>
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={handleBack}
-          hitSlop={HEADER_HIT_SLOP}
-          accessibilityLabel="Go back"
-          activeOpacity={0.7}
-        >
-          <Icon name="back" size={28} />
-        </TouchableOpacity>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={handleUndo}
-            hitSlop={HEADER_HIT_SLOP}
-            accessibilityLabel="Undo"
-            activeOpacity={0.7}
-            disabled={historyIndex <= 0}
-          >
-            <Icon name="undo" size={22} color={historyIndex <= 0 ? theme.colors.textDisabled : theme.colors.icon} />
+        <View style={styles.headerTopRow}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+            <Icon name="back" size={22} />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleRedo}
-            hitSlop={HEADER_HIT_SLOP}
-            accessibilityLabel="Redo"
-            activeOpacity={0.7}
-            disabled={historyIndex >= history.length - 1}
-          >
-            <Icon name="redo" size={22} color={historyIndex >= history.length - 1 ? theme.colors.textDisabled : theme.colors.icon} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={showAttachMenu}
-            hitSlop={HEADER_HIT_SLOP}
-            accessibilityLabel="Add attachment"
-            activeOpacity={0.7}
-          >
-            <Icon name="attach" size={22} />
-          </TouchableOpacity>
-          <VoiceInputButton
-            size={34}
-            onResult={(text) => {
-              if (!title.trim()) {
-                handleTitleChange(text);
-              } else {
-                richEditorRef.current?.insertText(' ' + text);
-                const newContent = content ? `${content} ${text}` : `<p>${text}</p>`;
-                const newPlain = plainText ? `${plainText} ${text}` : text;
-                handleContentChange(newContent, newPlain);
-              }
-            }}
-          />
-          {!isNew && (
-            <TouchableOpacity
-              onPress={confirmDelete}
-              hitSlop={HEADER_HIT_SLOP}
-              accessibilityLabel="Delete note"
-              activeOpacity={0.7}
-            >
-              <Icon name="delete" size={22} />
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={[styles.headerIconBtn, historyIndex <= 0 && styles.headerIconBtnDisabled]} onPress={handleUndo} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7} disabled={historyIndex <= 0}>
+              <Icon name="undo" size={20} color={theme.colors.icon} />
             </TouchableOpacity>
-          )}
+            <TouchableOpacity style={[styles.headerIconBtn, historyIndex >= history.length - 1 && styles.headerIconBtnDisabled]} onPress={handleRedo} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7} disabled={historyIndex >= history.length - 1}>
+              <Icon name="redo" size={20} color={theme.colors.icon} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerIconBtn} onPress={showAttachMenu} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+              <Icon name="attach" size={20} />
+            </TouchableOpacity>
+            <VoiceInputButton
+              size={36}
+              onResult={(text) => {
+                if (!title.trim()) {
+                  handleTitleChange(text);
+                } else {
+                  richEditorRef.current?.insertText(' ' + text);
+                  const newContent = content ? `${content} ${text}` : `<p>${text}</p>`;
+                  const newPlain = plainText ? `${plainText} ${text}` : text;
+                  handleContentChange(newContent, newPlain);
+                }
+              }}
+            />
+            {!isNew && (
+              <TouchableOpacity style={styles.headerIconBtn} onPress={confirmDelete} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+                <Icon name="delete" size={20} color={theme.colors.error} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.saveBtn} onPress={handleBack} activeOpacity={0.85}>
+              <Text style={styles.saveBtnText}>Save</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Category badge + date hint below top row */}
+        <View style={styles.headerMeta}>
+          <View style={[styles.categoryBadge, { backgroundColor: catMeta.bg }]}>
+            <Text style={styles.categoryGridEmoji}>{catMeta.emoji}</Text>
+            <Text style={[styles.categoryBadgeText, { color: catMeta.color }]}>
+              {category === 'none' ? 'Note' : category.charAt(0).toUpperCase() + category.slice(1)}
+            </Text>
+          </View>
+          <View style={styles.headerDot} />
+          <Text style={styles.headerDateText}>
+            {note?.updatedAt
+              ? new Date(note.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+              : 'New note'}
+          </Text>
         </View>
       </View>
 
-      <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled">
-        <RichNoteEditor
-          ref={richEditorRef}
-          title={title}
-          content={content}
-          onTitleChange={handleTitleChange}
-          onContentChange={handleContentChange}
-          contentRestoreKey={contentRestoreKey}
-        />
+      <ScrollView style={styles.scroll} keyboardShouldPersistTaps="always">
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Tags</Text>
-          <View style={styles.tagRow}>
-            {tags.map((t) => (
-              <TouchableOpacity
-                key={t.id}
-                style={[styles.tagChip, tagIds.includes(t.id) && styles.tagChipSelected]}
-                onPress={() => toggleTag(t.id)}
-              >
-                <Text style={[styles.tagText, tagIds.includes(t.id) && styles.tagTextSelected]}>{t.name}</Text>
-              </TouchableOpacity>
-            ))}
+        {/* ── Editor card ── */}
+        <View style={styles.editorCard}>
+          <RichNoteEditor
+            ref={richEditorRef}
+            title={title}
+            content={content}
+            onTitleChange={handleTitleChange}
+            onContentChange={handleContentChange}
+            contentRestoreKey={contentRestoreKey}
+          />
+        </View>
+
+        {/* ── Tags section ── */}
+        {tags.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Tags</Text>
+            <View style={styles.metaCard}>
+              <View style={[styles.section, styles.sectionLast]}>
+                <View style={styles.chipRow}>
+                  {tags.map((t) => (
+                    <TouchableOpacity key={t.id} style={[styles.chip, tagIds.includes(t.id) && styles.chipSelected]} onPress={() => toggleTag(t.id)}>
+                      <Text style={[styles.chipText, tagIds.includes(t.id) && styles.chipTextSelected]}>{t.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* ── Category section ── */}
+        <Text style={styles.sectionTitle}>Category</Text>
+        <View style={styles.metaCard}>
+          <View style={[styles.section, styles.sectionLast]}>
+            <View style={styles.categoryGrid}>
+              {categories.map((c) => {
+                const m = CATEGORY_META[c];
+                const selected = category === c;
+                return (
+                  <TouchableOpacity
+                    key={c}
+                    style={[styles.categoryGridItem, { backgroundColor: selected ? m.bg : theme.colors.inputBg }, selected && styles.categoryGridItemSelected, selected && { borderColor: m.color }]}
+                    onPress={() => setCategory(c)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.categoryGridEmoji}>{m.emoji}</Text>
+                    <Text style={[styles.categoryGridText, { color: selected ? m.color : theme.colors.textSecondary }]}>
+                      {c === 'none' ? 'None' : c}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Category</Text>
-          <View style={styles.tagRow}>
-            {categories.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.tagChip, category === c && styles.tagChipSelected]}
-                onPress={() => setCategory(c)}
-              >
-                <Text style={[styles.tagText, category === c && styles.tagTextSelected]}>{c === 'none' ? 'None' : c}</Text>
+        {/* ── Reminder section ── */}
+        <Text style={styles.sectionTitle}>Reminder</Text>
+        <View style={styles.metaCard}>
+          <View style={[styles.section, styles.sectionLast]}>
+            {reminderId || pendingReminderDate ? (
+              <TouchableOpacity style={styles.reminderActiveRow} onPress={removeReminderNote} activeOpacity={0.8}>
+                <View style={[styles.sectionIconWrap, { backgroundColor: theme.colors.warningLight, width: 28, height: 28 }]}>
+                  <Icon name="reminder" size={14} color={theme.colors.warning} />
+                </View>
+                <Text style={styles.reminderActiveText} numberOfLines={1}>{reminderDateLabel ?? 'Reminder set'}</Text>
+                <Text style={styles.reminderRemove}>Remove</Text>
               </TouchableOpacity>
-            ))}
+            ) : (
+              <>
+                <View style={styles.quickRow}>
+                  <TouchableOpacity style={styles.reminderBtn} onPress={addReminderTime} activeOpacity={0.8}>
+                    <Icon name="calendar" size={14} color={theme.colors.primary} />
+                    <Text style={styles.reminderBtnText}>Pick date & time</Text>
+                  </TouchableOpacity>
+                  {smartSuggestions.map((s) => (
+                    <TouchableOpacity key={s.label} style={styles.quickChip} onPress={() => setSmartReminder(s.getDate)} activeOpacity={0.7}>
+                      <Text style={styles.quickChipText}>{s.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.repeatRow}>
+                  <Text style={styles.repeatLabel}>Repeat:</Text>
+                  {(['none', 'daily', 'weekly'] as const).map((r) => (
+                    <TouchableOpacity key={r} style={[styles.chip, pendingReminderRepeat === r && styles.chipSelected]} onPress={() => setPendingReminderRepeat(r)}>
+                      <Text style={[styles.chipText, pendingReminderRepeat === r && styles.chipTextSelected]}>{r === 'none' ? 'Once' : r}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Reminder</Text>
-          {reminderId || pendingReminderDate ? (
-            <TouchableOpacity onPress={removeReminderNote}>
-              <Text style={styles.reminderText}>
-                <Icon name="reminder" size={16} />{' '}
-                {reminderDateLabel ?? 'Set – tap to remove'}
-              </Text>
-              {reminderDateLabel != null && (
-                <Text style={styles.reminderSubtext}>Tap to remove</Text>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <>
-              <TouchableOpacity onPress={addReminderTime}>
-                <Text style={styles.reminderText}><Icon name="reminder" size={16} /> Pick date & time</Text>
-              </TouchableOpacity>
-              <View style={styles.smartRow}>
-                {smartSuggestions.map((s) => (
-                  <TouchableOpacity
-                    key={s.label}
-                    style={styles.smartChip}
-                    onPress={() => setSmartReminder(s.getDate)}
-                  >
-                    <Text style={styles.smartChipText}>{s.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={styles.repeatRow}>
-                <Text style={styles.repeatLabel}>Repeat: </Text>
-                {(['none', 'daily', 'weekly'] as const).map((r) => (
-                  <TouchableOpacity
-                    key={r}
-                    style={[styles.repeatChip, pendingReminderRepeat === r && styles.tagChipSelected]}
-                    onPress={() => setPendingReminderRepeat(r)}
-                  >
-                    <Text style={[styles.tagText, pendingReminderRepeat === r && styles.tagTextSelected]}>{r === 'none' ? 'Once' : r}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
-        </View>
-
-        <AttachmentList
-          attachments={attachments}
-          onRemove={removeAttachment}
-        />
+        <AttachmentList attachments={attachments} onRemove={removeAttachment} />
+        <View style={styles.bottomPad} />
       </ScrollView>
 
       <SketchCanvasModal
@@ -661,6 +848,85 @@ export function NoteEditorScreen() {
         onClose={() => setSketchModal(false)}
         onSave={handleSketchSave}
       />
+
+      {/* ── Attachment bottom sheet ── */}
+      <Modal visible={attachMenuVisible} transparent animationType="slide" onRequestClose={() => setAttachMenuVisible(false)}>
+        <Pressable style={styles.attachOverlay} onPress={() => setAttachMenuVisible(false)}>
+          <Pressable style={styles.attachSheet} onPress={() => {}}>
+            <View style={styles.attachHandle} />
+            <Text style={styles.attachTitle}>Add Attachment</Text>
+
+            {/* Gallery */}
+            <TouchableOpacity style={styles.attachOption} activeOpacity={0.7} onPress={() => {
+              setAttachMenuVisible(false);
+              setTimeout(async () => {
+                const r = await pickImageFromGallery();
+                if (r) addAttachment(attachmentToNoteAttachment(r));
+              }, 350);
+            }}>
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#3B82F615' }]}>
+                <Ionicons name="image-outline" size={24} color="#3B82F6" />
+              </View>
+              <View>
+                <Text style={styles.attachOptionLabel}>Photo from Gallery</Text>
+                <Text style={styles.attachOptionDesc}>Choose an existing photo</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Camera */}
+            <TouchableOpacity style={styles.attachOption} activeOpacity={0.7} onPress={() => {
+              setAttachMenuVisible(false);
+              setTimeout(async () => {
+                const r = await takePhoto();
+                if (r) addAttachment(attachmentToNoteAttachment(r));
+              }, 350);
+            }}>
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#10B98115' }]}>
+                <Ionicons name="camera-outline" size={24} color="#10B981" />
+              </View>
+              <View>
+                <Text style={styles.attachOptionLabel}>Take Photo</Text>
+                <Text style={styles.attachOptionDesc}>Capture with camera</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Document */}
+            <TouchableOpacity style={styles.attachOption} activeOpacity={0.7} onPress={() => {
+              setAttachMenuVisible(false);
+              setTimeout(async () => {
+                const r = await pickDocument();
+                if (r) addAttachment(attachmentToNoteAttachment(r));
+              }, 350);
+            }}>
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#F59E0B15' }]}>
+                <Ionicons name="document-outline" size={24} color="#F59E0B" />
+              </View>
+              <View>
+                <Text style={styles.attachOptionLabel}>Document / PDF</Text>
+                <Text style={styles.attachOptionDesc}>Attach a file from storage</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Sketch */}
+            <TouchableOpacity style={styles.attachOption} activeOpacity={0.7} onPress={() => {
+              setAttachMenuVisible(false);
+              setTimeout(() => setSketchModal(true), 350);
+            }}>
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#8B5CF615' }]}>
+                <Ionicons name="pencil-outline" size={24} color="#8B5CF6" />
+              </View>
+              <View>
+                <Text style={styles.attachOptionLabel}>Sketch</Text>
+                <Text style={styles.attachOptionDesc}>Draw or annotate</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.attachCancelBtn} activeOpacity={0.7} onPress={() => setAttachMenuVisible(false)}>
+              <Text style={styles.attachCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {showDatePicker && (
         <DateTimePicker
