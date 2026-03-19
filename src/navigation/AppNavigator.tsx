@@ -20,6 +20,7 @@ import { BadgesScreen } from '../screens/BadgesScreen';
 import { CategoryManagerScreen } from '../screens/CategoryManagerScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { PrivacyPolicyScreen } from '../screens/PrivacyPolicyScreen';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList, HomeTabParamList } from './types';
 
@@ -93,6 +94,7 @@ export function AppNavigator() {
         <Stack.Screen name="CategoryManager" component={CategoryManagerScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Reports" component={ReportsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ presentation: 'card' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

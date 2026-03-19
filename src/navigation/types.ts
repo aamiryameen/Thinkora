@@ -17,6 +17,7 @@ export type RootStackParamList = {
   CategoryManager: undefined;
   Reports: undefined;
   Settings: undefined;
+  PrivacyPolicy: undefined;
 };
 
 export type NoteEditorParams = {

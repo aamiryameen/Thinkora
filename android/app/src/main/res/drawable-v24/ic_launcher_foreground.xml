@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer glow ring -->
+    <path
+        android:fillColor="#30FFFFFF"
+        android:pathData="M54,26 C68.36,26 80,37.64 80,52 C80,66.36 68.36,78 54,78 C39.64,78 28,66.36 28,52 C28,37.64 39.64,26 54,26 Z"/>
+
+    <!-- Bulb main circle (white) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,32 C65.05,32 74,40.95 74,52 C74,63.05 65.05,72 54,72 C42.95,72 34,63.05 34,52 C34,40.95 42.95,32 54,32 Z"/>
+
+    <!-- Bulb neck (rectangle via path) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M47,69 L61,69 L61,79 L47,79 Z"/>
+
+    <!-- Base line 1 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,80 L62,80 L62,83 L46,83 Z"/>
+
+    <!-- Base line 2 -->
+    <path
+        android:fillColor="#E0E7FF"
+        android:pathData="M47.5,84 L60.5,84 L60.5,86.5 L47.5,86.5 Z"/>
+
+    <!-- Base line 3 -->
+    <path
+        android:fillColor="#C7D2FE"
+        android:pathData="M49,87.5 L59,87.5 L59,89.5 L49,89.5 Z"/>
+
+    <!-- Inner bulb fill (indigo) -->
+    <path
+        android:fillColor="#6366F1"
+        android:pathData="M54,39 C62.28,39 69,45.72 69,54 C69,62.28 62.28,69 54,69 C45.72,69 39,62.28 39,54 C39,45.72 45.72,39 54,39 Z"/>
+
+    <!-- Filament lines (spark/star) -->
+    <path
+        android:strokeColor="#FFFDE7"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L54,44"/>
+    <path
+        android:strokeColor="#FFFDE7"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L54,64"/>
+    <path
+        android:strokeColor="#FFFDE7"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L44,54"/>
+    <path
+        android:strokeColor="#FFFDE7"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L64,54"/>
+    <path
+        android:strokeColor="#FFFDE7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L47,47"/>
+    <path
+        android:strokeColor="#FFFDE7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L61,61"/>
+    <path
+        android:strokeColor="#FFFDE7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L61,47"/>
+    <path
+        android:strokeColor="#FFFDE7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L47,61"/>
+
+    <!-- Center dot -->
+    <path
+        android:fillColor="#FFFDE7"
+        android:pathData="M54,51 C55.66,51 57,52.34 57,54 C57,55.66 55.66,57 54,57 C52.34,57 51,55.66 51,54 C51,52.34 52.34,51 54,51 Z"/>
+
+    <!-- Shine highlight on bulb -->
+    <path
+        android:fillColor="#40FFFFFF"
+        android:pathData="M42,40 C44.21,40 46,42.24 46,45 C46,47.76 44.21,50 42,50 C39.79,50 38,47.76 38,45 C38,42.24 39.79,40 42,40 Z"/>
+
+</vector>

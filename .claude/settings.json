@@ -17,7 +17,18 @@
       "Bash(npm uninstall:*)",
       "Bash(adb logcat:*)",
       "Bash(adb shell:*)",
-      "Bash(adb reverse:*)"
+      "Bash(adb reverse:*)",
+      "Bash(cp /Users/apple/Projects/NotioX/android/app/src/main/java/com/notiox/*.kt /Users/apple/Projects/NotioX/android/app/src/main/java/com/thinkora/)",
+      "Bash(rm /Users/apple/Projects/NotioX/android/app/src/main/java/com/notiox/*.kt)",
+      "Bash(kill -9 59713 60622)",
+      "Bash(find /Users/apple/Projects/NotioX/android/app/src/main/res/values* -type f -name \"*.xml\")",
+      "Bash(ls -lh /Users/apple/Projects/NotioX/android/app/src/main/res/mipmap-*/ic_launcher*.png)",
+      "Bash(python3 -c \"from PIL import Image, ImageDraw, ImageFilter; print\\(''PIL ok''\\)\")",
+      "Bash(mkdir -p /Users/apple/Projects/NotioX/android/app/src/main/res/mipmap-anydpi-v26)",
+      "Bash(mkdir -p /Users/apple/Projects/NotioX/android/app/src/main/res/drawable-v24)",
+      "Bash(python3:*)",
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)"
     ]
   }
 }

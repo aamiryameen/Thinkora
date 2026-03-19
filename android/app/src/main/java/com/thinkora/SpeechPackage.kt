@@ -1,4 +1,4 @@
-package com.notiox
+package com.thinkora
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

@@ -210,20 +210,13 @@ export function SettingsScreen() {
         <View>
           <Text style={styles.sectionTitle}>About</Text>
           <View style={styles.card}>
-            <View style={styles.row}>
-              <View style={[styles.rowIconWrap, { backgroundColor: '#EC489920' }]}>
-                <Ionicons name="mail-outline" size={20} color="#EC4899" />
-              </View>
-              <Text style={styles.rowLabel}>Feedback</Text>
-              <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
-            </View>
-            <View style={styles.row}>
+            <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('PrivacyPolicy')}>
               <View style={[styles.rowIconWrap, { backgroundColor: '#6366F120' }]}>
                 <Ionicons name="shield-outline" size={20} color="#6366F1" />
               </View>
               <Text style={styles.rowLabel}>Privacy Policy</Text>
               <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
-            </View>
+            </TouchableOpacity>
             <View style={[styles.row, styles.rowLast]}>
               <View style={[styles.rowIconWrap, { backgroundColor: '#4A90D920' }]}>
                 <Ionicons name="information-circle-outline" size={20} color="#4A90D9" />

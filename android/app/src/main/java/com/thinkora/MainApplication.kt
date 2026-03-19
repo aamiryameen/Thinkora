@@ -1,4 +1,4 @@
-package com.notiox
+package com.thinkora
 
 import android.app.Application
 import com.facebook.react.PackageList
