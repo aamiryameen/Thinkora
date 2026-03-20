@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { AdBanner } from '../components/AdBanner';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -546,6 +547,7 @@ export function MyDayScreen() {
           </View>
         </View>
       </ScrollView>
+      <AdBanner />
     </View>
   );
 }

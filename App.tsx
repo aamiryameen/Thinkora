@@ -3,8 +3,10 @@
  * @format
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StatusBar, View } from 'react-native';
+import mobileAds from 'react-native-google-mobile-ads';
+import { loadInterstitial } from './src/services/ads';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -42,6 +44,12 @@ function AppContent() {
 }
 
 function App() {
+  useEffect(() => {
+    mobileAds()
+      .initialize()
+      .then(() => loadInterstitial());
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

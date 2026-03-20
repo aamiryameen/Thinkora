@@ -28,7 +28,19 @@
       "Bash(mkdir -p /Users/apple/Projects/NotioX/android/app/src/main/res/drawable-v24)",
       "Bash(python3:*)",
       "Read(//tmp/**)",
-      "Read(//private/tmp/**)"
+      "Read(//private/tmp/**)",
+      "Bash(yarn add:*)",
+      "Bash(npm info:*)",
+      "Bash(find /Users/apple/Projects/NotioX/android -type f -name *.keystore -o -name *.jks)",
+      "Bash(keytool -genkeypair -v -storetype PKCS12 -keystore /Users/apple/Projects/NotioX/android/app/thinkora-release.keystore -alias thinkora -keyalg RSA -keysize 2048 -validity 10000 -storepass Thinkora@2024 -keypass Thinkora@2024 -dname \"CN=Thinkora, OU=Mobile, O=Thinkora, L=Unknown, S=Unknown, C=US\")",
+      "Bash(./gradlew bundleRelease)",
+      "Bash(identify /Users/apple/Projects/NotioX/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png)",
+      "Bash(sips -g pixelWidth -g pixelHeight /Users/apple/Projects/NotioX/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png)",
+      "Bash(cp /tmp/tablet7_dashboard.png ~/Desktop/)",
+      "Bash(cp /tmp/tablet7_tasks.png ~/Desktop/)",
+      "Bash(cp /tmp/tablet7_notes.png ~/Desktop/)",
+      "Bash(cp /tmp/tablet10_dashboard.png ~/Desktop/)",
+      "Bash(cp /tmp/tablet10_tasks.png ~/Desktop/)"
     ]
   }
 }

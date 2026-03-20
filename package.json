@@ -1,10 +1,11 @@
 {
   "name": "Thinkora",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
     "android:clean": "cd android && ./gradlew clean && cd ..",
+    "android:release": "cd android && ./gradlew bundleRelease && cd ..",
     "ios": "react-native run-ios",
     "pod:install": "cd ios && pod install && cd ..",
     "lint": "eslint .",
@@ -25,6 +26,7 @@
     "react-native-fs": "^2.20.0",
     "react-native-geolocation-service": "^5.3.1",
     "react-native-gesture-handler": "^2.20.0",
+    "react-native-google-mobile-ads": "15.8.3",
     "react-native-image-picker": "^7.1.2",
     "react-native-pell-rich-editor": "^1.10.0",
     "react-native-safe-area-context": "^5.5.2",

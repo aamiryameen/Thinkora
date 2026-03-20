@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
 import type { Task } from '../types';
+import { showInterstitial } from '../services/ads';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -36,6 +37,7 @@ export function TaskListScreen() {
   } = useApp();
 
   const [search, setSearch] = useState('');
+  const completionCount = useRef(0);
 
   const onSearchChange = useCallback((text: string) => {
     setSearch(text);
@@ -46,13 +48,23 @@ export function TaskListScreen() {
     setTaskFilter({ showCompleted: !taskFilter.showCompleted });
   }, [setTaskFilter, taskFilter.showCompleted]);
 
+  const handleToggleComplete = useCallback((task: Task) => {
+    toggleTaskComplete(task.id);
+    if (!task.completed) {
+      completionCount.current += 1;
+      if (completionCount.current % 5 === 0) {
+        showInterstitial();
+      }
+    }
+  }, [toggleTaskComplete]);
+
   const handleLongPress = useCallback((task: Task) => {
     Alert.alert(task.title, undefined, [
       { text: 'Cancel', style: 'cancel' },
-      { text: task.completed ? 'Mark Incomplete' : 'Mark Complete', onPress: () => toggleTaskComplete(task.id) },
+      { text: task.completed ? 'Mark Incomplete' : 'Mark Complete', onPress: () => handleToggleComplete(task) },
       { text: 'Delete', style: 'destructive', onPress: () => deleteTask(task.id) },
     ]);
-  }, [toggleTaskComplete, deleteTask]);
+  }, [handleToggleComplete, deleteTask]);
 
   // Group tasks: Today, Upcoming, No Date, Completed
   const sections = useMemo(() => {
@@ -212,12 +224,12 @@ export function TaskListScreen() {
       <TaskCard
         task={item.task}
         category={cat}
-        onToggle={() => toggleTaskComplete(item.task.id)}
+        onToggle={() => handleToggleComplete(item.task)}
         onPress={() => navigation.navigate('TaskEditor', { taskId: item.task.id })}
         onLongPress={() => handleLongPress(item.task)}
       />
     );
-  }, [styles, getTaskCategory, toggleTaskComplete, navigation, handleLongPress]);
+  }, [styles, getTaskCategory, handleToggleComplete, navigation, handleLongPress]);
 
   const keyExtractor = useCallback((item: typeof flatData[number], index: number) => {
     return item.type === 'header' ? `header-${item.title}` : item.task.id;

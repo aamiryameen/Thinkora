@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { AdBanner } from '../components/AdBanner';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useApp } from '../context/AppContext';
@@ -198,6 +199,7 @@ export function DashboardScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <AdBanner />
     </View>
   );
 }

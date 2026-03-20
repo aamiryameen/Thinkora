@@ -1,4 +1,7 @@
 {
   "name": "Thinkora",
-  "displayName": "Thinkora"
+  "displayName": "Thinkora",
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-7724552016512949~1451913543"
+  }
 }

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import { AdBanner } from '../components/AdBanner';
 import {
   View,
   Text,
@@ -410,6 +411,8 @@ export function NoteListScreen() {
           </View>
         }
       />
+
+      <AdBanner />
 
       <TouchableOpacity style={styles.fab} onPress={openNewNote} activeOpacity={0.9}>
         <Icon name="add" size={30} color={theme.colors.surface} />
