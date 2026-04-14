@@ -4,9 +4,12 @@
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { storage } from '../services/storage';
+import { syncWidgetData } from '../services/widgetService';
+import { scheduleDailyDigest } from '../services/smartNotificationService';
 import { DEFAULT_POMODORO } from '../core/constants';
 import { categoryColors } from '../core/theme';
 import { generateId } from '../utils/id';
+import { useApp } from './AppContext';
 import type {
   Habit, HabitFrequency, JournalEntry, MoodLevel,
   PomodoroSession, PomodoroSettings,
@@ -111,6 +114,7 @@ interface FeaturesContextValue {
 const FeaturesContext = createContext<FeaturesContextValue | null>(null);
 
 export function FeaturesProvider({ children }: { children: React.ReactNode }) {
+  const { tasks } = useApp();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [pomodoroSessions, setPomodoroSessions] = useState<PomodoroSession[]>([]);
@@ -144,6 +148,8 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Auto-save ──────────────────────────────────
   useEffect(() => { if (loaded) storage.setHabits(habits); }, [loaded, habits]);
+  useEffect(() => { if (loaded) syncWidgetData([], habits); }, [loaded, habits]);
+  useEffect(() => { if (loaded) scheduleDailyDigest(tasks, habits); }, [loaded, tasks, habits]);
   useEffect(() => { if (loaded) storage.setJournalEntries(journalEntries); }, [loaded, journalEntries]);
   useEffect(() => { if (loaded) storage.setPomodoroSessions(pomodoroSessions); }, [loaded, pomodoroSessions]);
   useEffect(() => { if (loaded) storage.setSharedLists(sharedLists); }, [loaded, sharedLists]);

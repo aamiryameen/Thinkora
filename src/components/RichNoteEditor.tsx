@@ -199,7 +199,7 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         selectedIconTint={theme.colors.primary}
       />
       <RichEditor
-        ref={(r) => {
+        ref={(r: any) => {
           if (r) richRef.current = r;
           if (r && !editorReady) {
             setEditorReady(true);

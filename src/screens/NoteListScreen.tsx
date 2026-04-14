@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 type StackNav = NativeStackNavigationProp<RootStackParamList>;
 
 export function NoteListScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<StackNav>();
   const stackNav = navigation.getParent() as StackNav | undefined;
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -250,9 +250,10 @@ export function NoteListScreen() {
     ({ item }: { item: Note }) => {
       const folder = item.folderId ? getFolder(item.folderId) : null;
       const tagNames = item.tagIds.map((tid) => getTag(tid)?.name).filter(Boolean);
+      const cardBg = item.color || theme.colors.cardBg;
       return (
         <TouchableOpacity
-          style={[styles.noteCard, item.isPinned && styles.noteCardPinned]}
+          style={[styles.noteCard, item.isPinned && styles.noteCardPinned, item.color ? { backgroundColor: item.color } : null]}
           onPress={() => openNote(item)}
           onLongPress={() =>
             Alert.alert('Note', undefined, [
@@ -270,7 +271,7 @@ export function NoteListScreen() {
           activeOpacity={0.8}
         >
           <View style={styles.noteHeader}>
-            <Text style={styles.noteTitle} numberOfLines={1}>
+            <Text style={[styles.noteTitle, item.color ? { color: '#1a1a2e' } : null]} numberOfLines={1}>
               {item.title || 'Untitled'}
             </Text>
             <View style={styles.noteBadges}>
@@ -278,22 +279,22 @@ export function NoteListScreen() {
               {item.isFavorite && <Icon name="star" size={14} />}
             </View>
           </View>
-          <Text style={styles.notePreview} numberOfLines={2}>
+          <Text style={[styles.notePreview, item.color ? { color: '#444' } : null]} numberOfLines={2}>
             {item.plainText || 'No content'}
           </Text>
           <View style={styles.noteMeta}>
-            {folder && <Text style={styles.metaText}>{folder.name}</Text>}
+            {folder && <Text style={[styles.metaText, item.color ? { color: '#666' } : null]}>{folder.name}</Text>}
             {tagNames.length > 0 && (
-              <Text style={styles.metaText}>{tagNames.join(', ')}</Text>
+              <Text style={[styles.metaText, item.color ? { color: '#666' } : null]}>{tagNames.join(', ')}</Text>
             )}
-            <Text style={styles.metaDate}>
+            <Text style={[styles.metaDate, item.color ? { color: '#666' } : null]}>
               {new Date(item.updatedAt).toLocaleDateString()}
             </Text>
           </View>
         </TouchableOpacity>
       );
     },
-    [getFolder, getTag, openNote, styles, toggleFavorite, togglePin]
+    [getFolder, getTag, openNote, styles, toggleFavorite, togglePin, theme]
   );
 
   const categoryLabels: Record<string, string> = {
@@ -314,10 +315,21 @@ export function NoteListScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Notes</Text>
-        <Text style={styles.headerSubtitle}>
-          {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View>
+            <Text style={styles.headerTitle}>Notes</Text>
+            <Text style={styles.headerSubtitle}>
+              {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Search')}
+            style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
+            activeOpacity={0.7}
+          >
+            <Icon name="search" size={20} />
+          </TouchableOpacity>
+        </View>
       </View>
       <View style={styles.searchRow}>
         <View style={[styles.searchBox, searchFocused && styles.searchBoxFocused]}>

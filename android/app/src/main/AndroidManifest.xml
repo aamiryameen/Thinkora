@@ -28,7 +28,7 @@
       tools:replace="android:appComponentFactory">
       <meta-data
         android:name="com.google.android.gms.ads.APPLICATION_ID"
-        android:value="ca-app-pub-7724552016512949~1451913543"
+        android:value="ca-app-pub-7724552016512949~7792320216"
         tools:replace="android:value"/>
       <activity
         android:name=".MainActivity"
@@ -43,5 +43,32 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!-- Tasks Widget -->
+      <receiver
+        android:name=".TasksWidget"
+        android:exported="true"
+        android:label="Thinkora Tasks">
+        <intent-filter>
+          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        </intent-filter>
+        <meta-data
+          android:name="android.appwidget.provider"
+          android:resource="@xml/widget_tasks_info" />
+      </receiver>
+
+      <!-- Habits Widget -->
+      <receiver
+        android:name=".HabitsWidget"
+        android:exported="true"
+        android:label="Thinkora Habits">
+        <intent-filter>
+          <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+        </intent-filter>
+        <meta-data
+          android:name="android.appwidget.provider"
+          android:resource="@xml/widget_habits_info" />
+      </receiver>
+
     </application>
 </manifest>

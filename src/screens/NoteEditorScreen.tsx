@@ -9,6 +9,7 @@ import {
   Platform,
   Modal,
   Pressable,
+  Share,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -19,6 +20,7 @@ import { SketchCanvasModal } from '../components/SketchCanvas';
 import { Icon } from '../components/Icons';
 import { VoiceInputButton } from '../components/VoiceInputButton';
 import { useApp } from '../context/AppContext';
+import { suggestTasksFromNote, autoCategorizeNote } from '../services/aiService';
 import {
   AUTO_SAVE_INTERVAL_MS,
   UNDO_HISTORY_MAX,
@@ -57,10 +59,15 @@ export function NoteEditorScreen() {
     updateNote,
     deleteNote,
     addReminder,
+    updateReminder,
     removeReminder,
     getReminder,
+    snoozeReminder,
     tags,
     getTag,
+    tasks,
+    addTask,
+    setNoteColor,
   } = useApp();
 
   const note = noteId ? getNote(noteId) : null;
@@ -87,6 +94,9 @@ export function NoteEditorScreen() {
   const isRestoringFromHistory = useRef(false);
   const [sketchModal, setSketchModal] = useState(false);
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
+  const [colorPickerVisible, setColorPickerVisible] = useState(false);
+  const [noteColor, setNoteColorState] = useState<string | null>(note?.color ?? null);
+  const [showAISuggestions, setShowAISuggestions] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   /** On Android we use date then time (two steps) to avoid crash when dismissing mode="datetime". */
   const [pickerStep, setPickerStep] = useState<'date' | 'time'>('date');
@@ -179,6 +189,7 @@ export function NoteEditorScreen() {
         tagIds,
         isFavorite: false,
         isPinned: false,
+        color: noteColor,
         category,
         attachments,
         reminderId: null,
@@ -206,6 +217,7 @@ export function NoteEditorScreen() {
       category,
       attachments,
       reminderId,
+      color: noteColor,
     });
   }, [
     isNew,
@@ -223,6 +235,7 @@ export function NoteEditorScreen() {
     addReminder,
     note,
     navigation,
+    noteColor,
   ]);
 
   useEffect(() => {
@@ -268,12 +281,15 @@ export function NoteEditorScreen() {
     );
   }, []);
 
+  const pickerStepRef = useRef<'date' | 'time'>('date');
+  const pendingPickerDateRef = useRef<Date | null>(null);
+
   const addReminderTime = useCallback(() => {
+    pickerStepRef.current = 'date';
+    pendingPickerDateRef.current = null;
+    setPickerStep('date');
+    setPendingDateForTime(null);
     setShowDatePicker(true);
-    if (Platform.OS === 'android') {
-      setPickerStep('date');
-      setPendingDateForTime(null);
-    }
   }, []);
 
   const smartSuggestions = [
@@ -333,24 +349,31 @@ export function NoteEditorScreen() {
     async (event: { type: string }, date?: Date) => {
       const isDismissed = event?.type === 'dismissed' || date == null;
       if (Platform.OS === 'android') {
-        if (pickerStep === 'date') {
-          if (isDismissed) {
-            setShowDatePicker(false);
-            setPickerStep('date');
-            setPendingDateForTime(null);
+        if (pickerStepRef.current === 'date') {
+          setShowDatePicker(false);
+          if (isDismissed || !date) {
+            pickerStepRef.current = 'date';
+            pendingPickerDateRef.current = null;
             return;
           }
-          if (date) {
-            setPendingDateForTime(date);
-            setPickerStep('time');
-          }
+          pendingPickerDateRef.current = date;
+          pickerStepRef.current = 'time';
+          setPickerStep('time');
+          setPendingDateForTime(date);
+          setTimeout(() => setShowDatePicker(true), 100);
           return;
         }
-        if (pickerStep === 'time') {
+        if (pickerStepRef.current === 'time') {
           setShowDatePicker(false);
+          pickerStepRef.current = 'date';
           setPickerStep('date');
+          if (!isDismissed && date && pendingPickerDateRef.current) {
+            const merged = new Date(pendingPickerDateRef.current);
+            merged.setHours(date.getHours(), date.getMinutes(), 0, 0);
+            await saveReminderWithTimestamp(merged.getTime());
+          }
+          pendingPickerDateRef.current = null;
           setPendingDateForTime(null);
-          if (!isDismissed && date) await saveReminderWithTimestamp(date.getTime());
           return;
         }
       }
@@ -358,7 +381,7 @@ export function NoteEditorScreen() {
       if (isDismissed) return;
       if (date) await saveReminderWithTimestamp(date.getTime());
     },
-    [pickerStep, saveReminderWithTimestamp]
+    [saveReminderWithTimestamp]
   );
 
   const removeReminderNote = useCallback(async () => {
@@ -389,9 +412,50 @@ export function NoteEditorScreen() {
     ]);
   }, [noteId, deleteNote, navigation]);
 
+  const NOTE_COLORS = [
+    null, // default
+    '#FEF3C7', '#FDE68A', '#FCD34D', // yellows
+    '#D1FAE5', '#A7F3D0', '#6EE7B7', // greens
+    '#DBEAFE', '#BFDBFE', '#93C5FD', // blues
+    '#FCE7F3', '#FBCFE8', '#F9A8D4', // pinks
+    '#EDE9FE', '#DDD6FE', '#C4B5FD', // purples
+    '#FEE2E2', '#FECACA', '#FCA5A5', // reds
+  ];
+
+  const handleSetNoteColor = useCallback((color: string | null) => {
+    setNoteColorState(color);
+    if (noteId) setNoteColor(noteId, color);
+    setColorPickerVisible(false);
+  }, [noteId, setNoteColor]);
+
+  const handleShare = useCallback(async () => {
+    const shareText = `${title ? title + '\n\n' : ''}${plainText}`;
+    try {
+      await Share.share({ message: shareText, title: title || 'Note' });
+    } catch (_) {}
+  }, [title, plainText]);
+
+  const aiSuggestions = useMemo(() => {
+    if (!plainText.trim()) return [];
+    const fakeNote = { id: noteId ?? '', title, content, plainText, folderId: null, tagIds: [], isFavorite: false, isPinned: false, color: null, category, attachments, reminderId: null, createdAt: Date.now(), updatedAt: Date.now() };
+    return suggestTasksFromNote(fakeNote as any, tasks);
+  }, [plainText, title, tasks, noteId, content, category, attachments]);
+
+  const handleAddSuggestedTask = useCallback((taskTitle: string) => {
+    addTask({ title: taskTitle, notes: '', completed: false, priority: 'medium', dueDate: null, reminderDate: null, repeat: 'none', subtasks: [], attachments: [], categoryId: null });
+    setShowAISuggestions(false);
+  }, [addTask]);
+
+  const handleAutoCategory = useCallback(() => {
+    const fakeNote = { id: noteId ?? '', title, content, plainText, folderId: null, tagIds: [], isFavorite: false, isPinned: false, color: null, category, attachments, reminderId: null, createdAt: Date.now(), updatedAt: Date.now() };
+    const suggested = autoCategorizeNote(fakeNote as any);
+    if (suggested !== 'none' && suggested !== 'all') setCategory(suggested);
+  }, [noteId, title, content, plainText, category, attachments]);
+
   const categories: SmartCategory[] = ['work', 'personal', 'ideas', 'todos', 'none'];
 
   const CATEGORY_META: Record<SmartCategory, { emoji: string; color: string; bg: string }> = {
+    all:      { emoji: '🗂️', color: '#6B7280', bg: '#6B728015' },
     work:     { emoji: '💼', color: '#3B82F6', bg: '#3B82F615' },
     personal: { emoji: '🌿', color: '#10B981', bg: '#10B98115' },
     ideas:    { emoji: '💡', color: '#F59E0B', bg: '#F59E0B15' },
@@ -418,6 +482,12 @@ export function NoteEditorScreen() {
           alignItems: 'center',
           justifyContent: 'space-between',
           marginBottom: theme.spacing.xs,
+          gap: theme.spacing.sm,
+        },
+        headerLeft: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
         },
         backBtn: {
           width: 36,
@@ -427,7 +497,7 @@ export function NoteEditorScreen() {
           justifyContent: 'center',
           backgroundColor: theme.colors.inputBg,
         },
-        headerActions: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+        headerActions: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, flexShrink: 1 },
         saveBtn: {
           backgroundColor: theme.colors.primary,
           borderRadius: theme.borderRadius.lg,
@@ -678,6 +748,34 @@ export function NoteEditorScreen() {
           color: theme.colors.text,
           fontWeight: '600',
         },
+        /* ── Color picker ────────────────────────── */
+        colorPickerSheet: {
+          backgroundColor: theme.colors.cardBg,
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          paddingBottom: insets.bottom + 16,
+          paddingTop: 8,
+          paddingHorizontal: theme.spacing.lg,
+          ...theme.shadows.card,
+        },
+        colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', paddingVertical: theme.spacing.md },
+        colorSwatch: { width: 44, height: 44, borderRadius: 22, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+        /* ── AI Suggestions ──────────────────────── */
+        aiSuggCard: {
+          marginHorizontal: theme.spacing.lg,
+          borderRadius: theme.borderRadius.xl,
+          backgroundColor: '#7C3AED10',
+          borderWidth: 1,
+          borderColor: '#7C3AED30',
+          overflow: 'hidden',
+          marginBottom: theme.spacing.sm,
+        },
+        aiSuggHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, padding: theme.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#7C3AED30' },
+        aiSuggTitle: { ...theme.typography.body, color: '#7C3AED', fontWeight: '700', flex: 1 },
+        aiSuggItem: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, gap: theme.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#7C3AED15' },
+        aiSuggItemText: { ...theme.typography.body, color: theme.colors.text, flex: 1 },
+        aiSuggAddBtn: { backgroundColor: '#7C3AED20', borderRadius: theme.borderRadius.full, paddingHorizontal: theme.spacing.sm, paddingVertical: 4 },
+        aiSuggAddText: { ...theme.typography.caption, color: '#7C3AED', fontWeight: '700' },
       }),
     [theme, insets.top, insets.bottom]
   );
@@ -702,28 +800,21 @@ export function NoteEditorScreen() {
             <TouchableOpacity style={styles.headerIconBtn} onPress={showAttachMenu} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
               <Icon name="attach" size={20} />
             </TouchableOpacity>
-            <VoiceInputButton
-              size={36}
-              onResult={(text) => {
-                if (!title.trim()) {
-                  handleTitleChange(text);
-                } else {
-                  richEditorRef.current?.insertText(' ' + text);
-                  const newContent = content ? `${content} ${text}` : `<p>${text}</p>`;
-                  const newPlain = plainText ? `${plainText} ${text}` : text;
-                  handleContentChange(newContent, newPlain);
-                }
-              }}
-            />
+            <TouchableOpacity style={[styles.headerIconBtn, noteColor ? { backgroundColor: noteColor, borderWidth: 2, borderColor: theme.colors.border } : null]} onPress={() => setColorPickerVisible(true)} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+              <Ionicons name="color-palette-outline" size={20} color={noteColor ? '#1a1a2e' : theme.colors.icon} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerIconBtn} onPress={handleShare} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+              <Ionicons name="share-outline" size={20} color={theme.colors.icon} />
+            </TouchableOpacity>
             {!isNew && (
               <TouchableOpacity style={styles.headerIconBtn} onPress={confirmDelete} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
                 <Icon name="delete" size={20} color={theme.colors.error} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity style={styles.saveBtn} onPress={handleBack} activeOpacity={0.85}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
           </View>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleBack} activeOpacity={0.85}>
+            <Text style={styles.saveBtnText}>Save</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Category badge + date hint below top row */}
@@ -775,10 +866,41 @@ export function NoteEditorScreen() {
           </>
         )}
 
+        {/* ── AI Task Suggestions ── */}
+        {aiSuggestions.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>AI Suggestions</Text>
+            <View style={styles.aiSuggCard}>
+              <TouchableOpacity style={styles.aiSuggHeader} onPress={() => setShowAISuggestions((v) => !v)} activeOpacity={0.8}>
+                <Ionicons name="sparkles" size={16} color="#7C3AED" />
+                <Text style={styles.aiSuggTitle}>{aiSuggestions.length} task{aiSuggestions.length !== 1 ? 's' : ''} found in note</Text>
+                <Ionicons name={showAISuggestions ? 'chevron-up' : 'chevron-down'} size={16} color="#7C3AED" />
+              </TouchableOpacity>
+              {showAISuggestions && aiSuggestions.map((s, i) => (
+                <View key={i} style={styles.aiSuggItem}>
+                  <Ionicons name="checkbox-outline" size={16} color="#7C3AED" />
+                  <Text style={styles.aiSuggItemText} numberOfLines={2}>{s}</Text>
+                  <TouchableOpacity style={styles.aiSuggAddBtn} onPress={() => handleAddSuggestedTask(s)}>
+                    <Text style={styles.aiSuggAddText}>+ Add</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+
         {/* ── Category section ── */}
         <Text style={styles.sectionTitle}>Category</Text>
         <View style={styles.metaCard}>
           <View style={[styles.section, styles.sectionLast]}>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: theme.spacing.sm, backgroundColor: '#7C3AED15', paddingVertical: 4, paddingHorizontal: theme.spacing.sm, borderRadius: theme.borderRadius.full }}
+              onPress={handleAutoCategory}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="sparkles" size={12} color="#7C3AED" />
+              <Text style={{ ...theme.typography.caption, color: '#7C3AED', fontWeight: '700' }}>Auto-categorize</Text>
+            </TouchableOpacity>
             <View style={styles.categoryGrid}>
               {categories.map((c) => {
                 const m = CATEGORY_META[c];
@@ -806,13 +928,37 @@ export function NoteEditorScreen() {
         <View style={styles.metaCard}>
           <View style={[styles.section, styles.sectionLast]}>
             {reminderId || pendingReminderDate ? (
-              <TouchableOpacity style={styles.reminderActiveRow} onPress={removeReminderNote} activeOpacity={0.8}>
-                <View style={[styles.sectionIconWrap, { backgroundColor: theme.colors.warningLight, width: 28, height: 28 }]}>
-                  <Icon name="reminder" size={14} color={theme.colors.warning} />
+              <View>
+                <View style={styles.reminderActiveRow}>
+                  <View style={[styles.sectionIconWrap, { backgroundColor: theme.colors.warningLight, width: 28, height: 28 }]}>
+                    <Icon name="reminder" size={14} color={theme.colors.warning} />
+                  </View>
+                  <Text style={styles.reminderActiveText} numberOfLines={1}>{reminderDateLabel ?? 'Reminder set'}</Text>
+                  <TouchableOpacity onPress={removeReminderNote}>
+                    <Text style={styles.reminderRemove}>Remove</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.reminderActiveText} numberOfLines={1}>{reminderDateLabel ?? 'Reminder set'}</Text>
-                <Text style={styles.reminderRemove}>Remove</Text>
-              </TouchableOpacity>
+                {reminderId && reminderId !== 'pending' && (
+                  <View style={[styles.quickRow, { marginTop: theme.spacing.sm }]}>
+                    <Text style={[styles.repeatLabel, { marginRight: 4 }]}>Snooze:</Text>
+                    {[
+                      { label: '10m', minutes: 10 },
+                      { label: '30m', minutes: 30 },
+                      { label: '1h', minutes: 60 },
+                      { label: '3h', minutes: 180 },
+                    ].map((s) => (
+                      <TouchableOpacity
+                        key={s.label}
+                        style={styles.quickChip}
+                        onPress={() => snoozeReminder(reminderId, s.minutes)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.quickChipText}>{s.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
             ) : (
               <>
                 <View style={styles.quickRow}>
@@ -941,6 +1087,32 @@ export function NoteEditorScreen() {
           minimumDate={new Date()}
         />
       )}
+
+      {/* ── Color Picker Modal ── */}
+      <Modal visible={colorPickerVisible} transparent animationType="slide" onRequestClose={() => setColorPickerVisible(false)}>
+        <Pressable style={styles.attachOverlay} onPress={() => setColorPickerVisible(false)}>
+          <Pressable style={styles.colorPickerSheet} onPress={() => {}}>
+            <View style={styles.attachHandle} />
+            <Text style={styles.attachTitle}>Note Color</Text>
+            <View style={styles.colorGrid}>
+              {NOTE_COLORS.map((c, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.colorSwatch, { backgroundColor: c ?? theme.colors.cardBg, borderColor: noteColor === c ? theme.colors.primary : theme.colors.border }]}
+                  onPress={() => handleSetNoteColor(c)}
+                  activeOpacity={0.8}
+                >
+                  {c === null && <Ionicons name="close" size={18} color={theme.colors.textMuted} />}
+                  {noteColor === c && c !== null && <Ionicons name="checkmark" size={18} color="#1a1a2e" />}
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={styles.attachCancelBtn} onPress={() => setColorPickerVisible(false)}>
+              <Text style={styles.attachCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
     </View>
   );

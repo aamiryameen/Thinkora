@@ -10,6 +10,7 @@ export type RootStackParamList = {
   MyDay: undefined;
   Pomodoro: undefined;
   MoodJournal: undefined;
+  AIMoodInsights: undefined;
   Eisenhower: undefined;
   SharedLists: undefined;
   Templates: undefined;
@@ -18,6 +19,8 @@ export type RootStackParamList = {
   Reports: undefined;
   Settings: undefined;
   PrivacyPolicy: undefined;
+  Search: undefined;
+  Gantt: undefined;
 };
 
 export type NoteEditorParams = {
@@ -33,7 +36,7 @@ export type TaskEditorParams = {
 export type HomeTabParamList = {
   MyDay: undefined;
   Tasks: undefined;
-  Calendar: undefined;
+  Quotes: undefined;
   Notes: undefined;
   Dashboard: undefined;
 };

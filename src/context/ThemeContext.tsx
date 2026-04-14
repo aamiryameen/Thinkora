@@ -21,7 +21,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemColorScheme = useColorScheme();
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
-  const [themeColorId, setThemeColorIdState] = useState<AppThemeId>('default');
+  const [themeColorId, setThemeColorIdState] = useState<AppThemeId>('berry');
 
   useEffect(() => {
     Promise.all([

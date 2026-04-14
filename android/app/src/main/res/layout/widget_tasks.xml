@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_bg"
+    android:padding="16dp">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="10dp">
+
+        <TextView
+            android:id="@+id/widget_tasks_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="My Tasks"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_tasks_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="0 left"
+            android:textColor="#FFFFFFAA"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#FFFFFF30"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Task rows (up to 4) -->
+    <LinearLayout
+        android:id="@+id/widget_task_row_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+        <TextView
+            android:id="@+id/widget_task_check_1"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:text="○"
+            android:textColor="#FFFFFFCC"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:layout_marginEnd="8dp"/>
+        <TextView
+            android:id="@+id/widget_task_text_1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+        <TextView
+            android:id="@+id/widget_task_due_1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFFAA"
+            android:textSize="11sp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_task_row_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+        <TextView
+            android:id="@+id/widget_task_check_2"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:text="○"
+            android:textColor="#FFFFFFCC"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:layout_marginEnd="8dp"/>
+        <TextView
+            android:id="@+id/widget_task_text_2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+        <TextView
+            android:id="@+id/widget_task_due_2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFFAA"
+            android:textSize="11sp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_task_row_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+        <TextView
+            android:id="@+id/widget_task_check_3"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:text="○"
+            android:textColor="#FFFFFFCC"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:layout_marginEnd="8dp"/>
+        <TextView
+            android:id="@+id/widget_task_text_3"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+        <TextView
+            android:id="@+id/widget_task_due_3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFFAA"
+            android:textSize="11sp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_task_row_4"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+        <TextView
+            android:id="@+id/widget_task_check_4"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:text="○"
+            android:textColor="#FFFFFFCC"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:layout_marginEnd="8dp"/>
+        <TextView
+            android:id="@+id/widget_task_text_4"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+        <TextView
+            android:id="@+id/widget_task_due_4"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFFAA"
+            android:textSize="11sp"/>
+    </LinearLayout>
+
+    <!-- Empty state -->
+    <TextView
+        android:id="@+id/widget_tasks_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:text="All tasks done! 🎉"
+        android:textColor="#FFFFFFAA"
+        android:textSize="13sp"
+        android:gravity="center"
+        android:visibility="gone"/>
+
+    <!-- More indicator -->
+    <TextView
+        android:id="@+id/widget_tasks_more"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFFAA"
+        android:textSize="11sp"
+        android:gravity="end"
+        android:layout_marginTop="4dp"
+        android:visibility="gone"/>
+
+</LinearLayout>

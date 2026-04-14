@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Alert, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -26,6 +26,11 @@ export function HabitTrackerScreen() {
   const [newName, setNewName] = useState('');
   const [selectedColor, setSelectedColor] = useState(0);
   const [selectedIcon, setSelectedIcon] = useState(0);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+  const [selectedCalendarHabit, setSelectedCalendarHabit] = useState<string | null>(null);
 
   const today = dateKey(new Date());
   const last7Days = useMemo(() => {
@@ -75,6 +80,28 @@ export function HabitTrackerScreen() {
 
   const maxHeatmap = Math.max(...heatmapData.flat().map((d) => d.completed), 1);
 
+  // Monthly calendar data
+  const calendarDays = useMemo(() => {
+    const { year, month } = calendarMonth;
+    const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells: (string | null)[] = Array(firstDay).fill(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+    }
+    // Pad to complete grid
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  }, [calendarMonth]);
+
+  const calendarHabit = useMemo(() => {
+    if (!selectedCalendarHabit) return habits[0] ?? null;
+    return habits.find((h) => h.id === selectedCalendarHabit) ?? habits[0] ?? null;
+  }, [selectedCalendarHabit, habits]);
+
+  const monthName = new Date(calendarMonth.year, calendarMonth.month, 1)
+    .toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
     header: { paddingHorizontal: theme.spacing.lg, paddingTop: insets.top + theme.spacing.md, paddingBottom: theme.spacing.md, backgroundColor: theme.colors.surface },
@@ -111,6 +138,18 @@ export function HabitTrackerScreen() {
     heatmapLabel: { ...theme.typography.caption, color: theme.colors.textMuted, marginTop: theme.spacing.sm, textAlign: 'center' },
     empty: { alignItems: 'center', paddingTop: 40, gap: theme.spacing.md },
     emptyText: { ...theme.typography.body, color: theme.colors.textMuted },
+    // Monthly calendar
+    calendarCard: { backgroundColor: theme.colors.cardBg, borderRadius: theme.borderRadius.xl, padding: theme.spacing.lg, ...theme.shadows.card },
+    calendarNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: theme.spacing.md },
+    calendarMonthText: { ...theme.typography.titleSmall, color: theme.colors.text, fontWeight: '700' },
+    calendarWeekRow: { flexDirection: 'row', marginBottom: theme.spacing.xs },
+    calendarWeekDay: { flex: 1, textAlign: 'center', ...theme.typography.overline, color: theme.colors.textMuted },
+    calendarGrid: { gap: 4 },
+    calendarRow: { flexDirection: 'row' },
+    calendarCell: { flex: 1, aspectRatio: 1, margin: 2, borderRadius: 100, alignItems: 'center', justifyContent: 'center' },
+    calendarDayNum: { ...theme.typography.caption, fontWeight: '600' },
+    habitSelector: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs, marginBottom: theme.spacing.md },
+    habitSelectorChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: theme.spacing.sm, borderRadius: theme.borderRadius.full, borderWidth: 1.5 },
   }), [theme, insets]);
 
   const renderHabit = (habit: Habit) => {
@@ -218,6 +257,94 @@ export function HabitTrackerScreen() {
                 </View>
               ))}
               <Text style={styles.heatmapLabel}>Less → More</Text>
+            </View>
+
+            {/* Monthly Calendar */}
+            <Text style={styles.sectionTitle}>Monthly View</Text>
+            <View style={styles.calendarCard}>
+              {/* Habit selector */}
+              {habits.length > 1 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: theme.spacing.md }}>
+                  <View style={styles.habitSelector}>
+                    {habits.filter((h) => !h.archived).map((h) => {
+                      const isSelected = (calendarHabit?.id === h.id);
+                      return (
+                        <TouchableOpacity
+                          key={h.id}
+                          style={[styles.habitSelectorChip, { borderColor: isSelected ? h.color : theme.colors.border, backgroundColor: isSelected ? h.color + '20' : 'transparent' }]}
+                          onPress={() => setSelectedCalendarHabit(h.id)}
+                        >
+                          <Ionicons name={h.icon} size={12} color={h.color} />
+                          <Text style={{ ...theme.typography.caption, color: isSelected ? h.color : theme.colors.textSecondary, fontWeight: '600' }}>{h.name}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              )}
+
+              {/* Month navigation */}
+              <View style={styles.calendarNav}>
+                <TouchableOpacity onPress={() => setCalendarMonth(({ year, month }) => {
+                  const d = new Date(year, month - 1, 1);
+                  return { year: d.getFullYear(), month: d.getMonth() };
+                })} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="chevron-back" size={20} color={theme.colors.text} />
+                </TouchableOpacity>
+                <Text style={styles.calendarMonthText}>{monthName}</Text>
+                <TouchableOpacity onPress={() => setCalendarMonth(({ year, month }) => {
+                  const d = new Date(year, month + 1, 1);
+                  return { year: d.getFullYear(), month: d.getMonth() };
+                })} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="chevron-forward" size={20} color={theme.colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Week day headers */}
+              <View style={styles.calendarWeekRow}>
+                {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                  <Text key={d} style={styles.calendarWeekDay}>{d}</Text>
+                ))}
+              </View>
+
+              {/* Calendar grid */}
+              <View style={styles.calendarGrid}>
+                {Array.from({ length: calendarDays.length / 7 }, (_, rowIdx) => (
+                  <View key={rowIdx} style={styles.calendarRow}>
+                    {calendarDays.slice(rowIdx * 7, rowIdx * 7 + 7).map((key, colIdx) => {
+                      if (!key) {
+                        return <View key={colIdx} style={styles.calendarCell} />;
+                      }
+                      const isToday = key === today;
+                      const done = calendarHabit ? (calendarHabit.completedDates ?? []).includes(key) : false;
+                      const habitColor = calendarHabit?.color ?? theme.colors.primary;
+                      const dayNum = parseInt(key.split('-')[2], 10);
+                      return (
+                        <TouchableOpacity
+                          key={key}
+                          style={[
+                            styles.calendarCell,
+                            done ? { backgroundColor: habitColor } : isToday ? { backgroundColor: theme.colors.primaryLight } : { backgroundColor: theme.colors.inputBg },
+                          ]}
+                          onPress={() => calendarHabit && toggleHabitDate(calendarHabit.id, key)}
+                          activeOpacity={0.7}
+                        >
+                          {done
+                            ? <Ionicons name="checkmark" size={14} color="#FFF" />
+                            : <Text style={[styles.calendarDayNum, { color: isToday ? theme.colors.primary : theme.colors.textMuted }]}>{dayNum}</Text>
+                          }
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+
+              {calendarHabit && (
+                <Text style={[styles.heatmapLabel, { marginTop: theme.spacing.md }]}>
+                  {(calendarHabit.completedDates ?? []).filter((k) => k.startsWith(`${calendarMonth.year}-${String(calendarMonth.month + 1).padStart(2, '0')}`)).length} day{(calendarHabit.completedDates ?? []).filter((k) => k.startsWith(`${calendarMonth.year}-${String(calendarMonth.month + 1).padStart(2, '0')}`)).length !== 1 ? 's' : ''} completed this month
+                </Text>
+              )}
             </View>
           </>
         )}

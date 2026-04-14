@@ -6,6 +6,7 @@ import {
   requestNotificationPermission,
   scheduleTimeReminder,
   cancelReminderNotification,
+  snoozeReminder as snoozeReminderService,
 } from '../services/reminderService';
 import type {
   Note, Folder, Tag, Reminder, NotesFilter, SortField, SortOrder, SmartCategory,
@@ -13,6 +14,11 @@ import type {
 } from '../types';
 import { generateId } from '../utils/id';
 import { categoryColors } from '../core/theme';
+import { syncWidgetData } from '../services/widgetService';
+import {
+  syncSmartDeadlineReminders,
+  scheduleOverdueCheck,
+} from '../services/smartNotificationService';
 
 // ─── Default task categories ────────────────────────
 const DEFAULT_CATEGORIES: TaskCategory[] = [
@@ -51,6 +57,7 @@ interface AppContextValue extends AppState {
   toggleFavorite: (id: string) => void;
   togglePin: (id: string) => void;
   setNoteCategory: (noteId: string, category: SmartCategory) => void;
+  setNoteColor: (noteId: string, color: string | null) => void;
 
   // Folders
   addFolder: (name: string, parentId?: string | null) => Folder;
@@ -69,6 +76,7 @@ interface AppContextValue extends AppState {
   updateReminder: (id: string, patch: Partial<Reminder>) => Promise<void>;
   removeReminder: (id: string) => Promise<void>;
   getReminder: (id: string) => Reminder | undefined;
+  snoozeReminder: (id: string, minutes: number) => Promise<void>;
 
   // Filter
   setFilter: (patch: Partial<NotesFilter>) => void;
@@ -150,23 +158,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ─── Hydration ──────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const [n, f, t, r, tk, tc, s] = await Promise.all([
-        storage.getNotes(),
-        storage.getFolders(),
-        storage.getTags(),
-        storage.getReminders(),
-        storage.getTasks(),
-        storage.getTaskCategories(),
-        storage.getSettings(),
-      ]);
-      setNotes(n);
-      setFolders(f);
-      setTags(t);
-      setReminders(r);
-      setTasks(tk);
-      setTaskCategories(tc.length > 0 ? tc : DEFAULT_CATEGORIES);
-      setSettings(s);
-      setLoaded(true);
+      try {
+        console.log('[Hydration] Loading data from WatermelonDB...');
+        const [n, f, t, r, tk, tc, s] = await Promise.all([
+          storage.getNotes(),
+          storage.getFolders(),
+          storage.getTags(),
+          storage.getReminders(),
+          storage.getTasks(),
+          storage.getTaskCategories(),
+          storage.getSettings(),
+        ]);
+        console.log('[Hydration] Loaded:', n.length, 'notes,', tk.length, 'tasks,', tc.length, 'categories');
+        setNotes(n);
+        setFolders(f);
+        setTags(t);
+        setReminders(r);
+        setTasks(tk);
+        setTaskCategories(tc.length > 0 ? tc : DEFAULT_CATEGORIES);
+        setSettings(s);
+        setLoaded(true);
+      } catch (err) {
+        console.error('[Hydration] FAILED to load data:', err);
+        setLoaded(true); // still mark as loaded so app doesn't hang
+      }
     })();
   }, []);
 
@@ -174,17 +189,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (Platform.OS === 'android') {
       createNotificationChannel();
       requestNotificationPermission();
+      // Register foreground notification event handler for snooze actions
+      try {
+        const notifeeModule = require('@notifee/react-native').default;
+        const { EventType } = require('@notifee/react-native');
+        notifeeModule.onForegroundEvent(({ type, detail }: { type: number; detail: any }) => {
+          if (type === EventType.ACTION_PRESS) {
+            const actionId = detail.pressAction?.id;
+            const reminderId = detail.notification?.data?.reminderId;
+            if (actionId === 'dismiss' && detail.notification?.id) {
+              notifeeModule.cancelNotification(detail.notification.id);
+            } else if (actionId === 'snooze_10' && reminderId) {
+              const r = reminders.find((rm: Reminder) => rm.id === reminderId);
+              if (r) snoozeReminderService(r, 10);
+            } else if (actionId === 'snooze_60' && reminderId) {
+              const r = reminders.find((rm: Reminder) => rm.id === reminderId);
+              if (r) snoozeReminderService(r, 60);
+            }
+          }
+        });
+      } catch {}
     }
-  }, []);
+  }, [reminders]);
 
   // ─── Auto-save ──────────────────────────────────────
-  useEffect(() => { if (loaded) storage.setNotes(notes); }, [loaded, notes]);
-  useEffect(() => { if (loaded) storage.setFolders(folders); }, [loaded, folders]);
-  useEffect(() => { if (loaded) storage.setTags(tags); }, [loaded, tags]);
-  useEffect(() => { if (loaded) storage.setReminders(reminders); }, [loaded, reminders]);
-  useEffect(() => { if (loaded) storage.setTasks(tasks); }, [loaded, tasks]);
-  useEffect(() => { if (loaded) storage.setTaskCategories(taskCategories); }, [loaded, taskCategories]);
-  useEffect(() => { if (loaded) storage.setSettings(settings); }, [loaded, settings]);
+  useEffect(() => { if (loaded) storage.setNotes(notes).catch(e => console.error('[Save] notes failed:', e)); }, [loaded, notes]);
+  useEffect(() => { if (loaded) storage.setFolders(folders).catch(e => console.error('[Save] folders failed:', e)); }, [loaded, folders]);
+  useEffect(() => { if (loaded) storage.setTags(tags).catch(e => console.error('[Save] tags failed:', e)); }, [loaded, tags]);
+  useEffect(() => { if (loaded) storage.setReminders(reminders).catch(e => console.error('[Save] reminders failed:', e)); }, [loaded, reminders]);
+  useEffect(() => {
+    if (loaded) {
+      console.log('[Save] Saving', tasks.length, 'tasks to DB...');
+      storage.setTasks(tasks)
+        .then(() => console.log('[Save] Tasks saved successfully'))
+        .catch(e => console.error('[Save] tasks FAILED:', e));
+    }
+  }, [loaded, tasks]);
+  useEffect(() => { if (loaded) syncWidgetData(tasks, []); }, [loaded, tasks]);
+  useEffect(() => { if (loaded) syncSmartDeadlineReminders(tasks).catch(() => {}); }, [loaded, tasks]);
+  useEffect(() => { if (loaded) scheduleOverdueCheck(tasks).catch(() => {}); }, [loaded, tasks]);
+  useEffect(() => { if (loaded) storage.setTaskCategories(taskCategories).catch(e => console.error('[Save] categories failed:', e)); }, [loaded, taskCategories]);
+  useEffect(() => { if (loaded) storage.setSettings(settings).catch(e => console.error('[Save] settings failed:', e)); }, [loaded, settings]);
 
   // ─── Notes ──────────────────────────────────────────
   const addNote = useCallback((note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>): Note => {
@@ -215,6 +260,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setNoteCategory = useCallback((noteId: string, category: SmartCategory) => {
     setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, category, updatedAt: Date.now() } : n)));
+  }, []);
+
+  const setNoteColor = useCallback((noteId: string, color: string | null) => {
+    setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, color, updatedAt: Date.now() } : n)));
   }, []);
 
   // ─── Folders ────────────────────────────────────────
@@ -285,6 +334,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const getReminder = useCallback((id: string) => reminders.find((r) => r.id === id), [reminders]);
 
+  const snoozeReminder = useCallback(async (id: string, minutes: number) => {
+    const r = reminders.find((x) => x.id === id);
+    if (!r) return;
+    const newNotifeeId = await snoozeReminderService(r, minutes);
+    const snoozedUntil = Date.now() + minutes * 60 * 1000;
+    setReminders((prev) => prev.map((x) =>
+      x.id === id ? { ...x, snoozedUntil, notifeeId: newNotifeeId ?? x.notifeeId } : x
+    ));
+  }, [reminders]);
+
   // ─── Notes filter ──────────────────────────────────
   const setFilter = useCallback((patch: Partial<NotesFilter>) => {
     setFilterState((f) => ({ ...f, ...patch }));
@@ -323,18 +382,59 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [notes, filter, tags]);
 
   // ─── Tasks ─────────────────────────────────────────
+  const scheduleTaskReminder = useCallback(async (task: Task) => {
+    try {
+      // Cancel any previous notification for this task
+      await cancelReminderNotification(`task-reminder-${task.id}`).catch(() => {});
+      if (!task.reminderDate || task.completed) {
+        console.log('[TaskReminder] No reminderDate or completed, skipping');
+        return;
+      }
+      // If reminder is in the past (more than 60s ago), skip it
+      if (task.reminderDate < Date.now() - 60000) {
+        console.log('[TaskReminder] Reminder too far in past, skipping');
+        return;
+      }
+      // If reminder is very close or slightly past, fire 5s from now
+      const fireAt = task.reminderDate <= Date.now() + 5000
+        ? Date.now() + 5000
+        : task.reminderDate;
+      console.log('[TaskReminder] Scheduling for', new Date(fireAt).toLocaleTimeString(), 'task:', task.title);
+      const reminder: Reminder = {
+        id: `task-reminder-${task.id}`,
+        noteId: task.id,
+        title: 'Task Reminder',
+        body: task.title,
+        triggerType: 'time',
+        date: fireAt,
+        repeat: 'none',
+        createdAt: Date.now(),
+      };
+      await scheduleTimeReminder(reminder);
+    } catch (err) {
+      console.error('[TaskReminder] Error scheduling:', err);
+    }
+  }, []);
+
   const addTask = useCallback((task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Task => {
     const now = Date.now();
     const newTask: Task = { ...task, id: generateId(), createdAt: now, updatedAt: now };
     setTasks((prev) => [newTask, ...prev]);
+    scheduleTaskReminder(newTask);
     return newTask;
-  }, []);
+  }, [scheduleTaskReminder]);
 
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: Date.now() } : t)));
-  }, []);
+    setTasks((prev) => prev.map((t) => {
+      if (t.id !== id) return t;
+      const updated = { ...t, ...patch, updatedAt: Date.now() };
+      scheduleTaskReminder(updated);
+      return updated;
+    }));
+  }, [scheduleTaskReminder]);
 
   const deleteTask = useCallback((id: string) => {
+    cancelReminderNotification(`task-reminder-${id}`).catch(() => {});
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -465,10 +565,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     () => ({
       notes, folders, tags, reminders, filter, isHydrated: loaded,
       tasks, taskCategories, taskFilter, settings,
-      addNote, updateNote, deleteNote, getNote, toggleFavorite, togglePin, setNoteCategory,
+      addNote, updateNote, deleteNote, getNote, toggleFavorite, togglePin, setNoteCategory, setNoteColor,
       addFolder, updateFolder, deleteFolder, getFolder,
       addTag, updateTag, deleteTag, getTag,
-      addReminder, updateReminder, removeReminder, getReminder,
+      addReminder, updateReminder, removeReminder, getReminder, snoozeReminder,
       setFilter, setSort, filteredNotes,
       addTask, updateTask, deleteTask, getTask, toggleTaskComplete,
       toggleSubTaskComplete, addSubTask, deleteSubTask,
@@ -479,10 +579,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [
       notes, folders, tags, reminders, filter, loaded,
       tasks, taskCategories, taskFilter, settings,
-      addNote, updateNote, deleteNote, getNote, toggleFavorite, togglePin, setNoteCategory,
+      addNote, updateNote, deleteNote, getNote, toggleFavorite, togglePin, setNoteCategory, setNoteColor,
       addFolder, updateFolder, deleteFolder, getFolder,
       addTag, updateTag, deleteTag, getTag,
-      addReminder, updateReminder, removeReminder, getReminder,
+      addReminder, updateReminder, removeReminder, getReminder, snoozeReminder,
       setFilter, setSort, filteredNotes,
       addTask, updateTask, deleteTask, getTask, toggleTaskComplete,
       toggleSubTaskComplete, addSubTask, deleteSubTask,

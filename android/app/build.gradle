@@ -82,8 +82,8 @@ android {
         applicationId "com.thinkora"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.0"
+        versionCode 8
+        versionName "1.2"
     }
     signingConfigs {
         debug {
@@ -110,6 +110,11 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
 }
 
 apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
@@ -117,6 +122,10 @@ apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation project(':watermelondb-jsi')
+
+    // Force latest Google Mobile Ads SDK for 16KB page alignment support
+    implementation("com.google.android.gms:play-services-ads:24.3.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

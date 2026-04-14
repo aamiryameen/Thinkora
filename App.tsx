@@ -7,6 +7,8 @@ import React, { useState, useEffect } from 'react';
 import { StatusBar, View } from 'react-native';
 import mobileAds from 'react-native-google-mobile-ads';
 import { loadInterstitial } from './src/services/ads';
+import { restoreQuickCaptureIfEnabled } from './src/services/quickCaptureService';
+import { runMigrationIfNeeded } from './src/services/migrateFromAsyncStorage';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -45,9 +47,11 @@ function AppContent() {
 
 function App() {
   useEffect(() => {
+    runMigrationIfNeeded();
     mobileAds()
       .initialize()
       .then(() => loadInterstitial());
+    restoreQuickCaptureIfEnabled();
   }, []);
 
   return (

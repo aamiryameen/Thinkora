@@ -81,7 +81,6 @@ export function TaskEditorScreen() {
   // DatePicker state
   const [showPicker, setShowPicker] = useState<'due' | 'reminder' | null>(null);
   const [pickerStep, setPickerStep] = useState<'date' | 'time'>('date');
-  const [pendingDate, setPendingDate] = useState<Date | null>(null);
 
   // Sync subtasks from context if editing existing
   useEffect(() => {
@@ -196,48 +195,66 @@ export function TaskEditorScreen() {
     ]);
   }, [taskId, deleteTask, navigation]);
 
+  // Refs hold all picker state so callbacks are never stale and no effects needed
+  const activePickerType = useRef<'due' | 'reminder'>('due');
+  const pendingDateRef = useRef<Date | null>(null);
+  const pickerStepRef = useRef<'date' | 'time'>('date');
+
   const onDatePick = useCallback(
     (event: { type: string }, date?: Date) => {
       const isDismissed = event?.type === 'dismissed' || date == null;
+
       if (Platform.OS === 'android') {
-        if (pickerStep === 'date') {
-          if (isDismissed) {
-            setShowPicker(null);
-            setPickerStep('date');
-            setPendingDate(null);
+        if (pickerStepRef.current === 'date') {
+          // Close the date picker first
+          setShowPicker(null);
+          setPickerStep('date');
+          if (isDismissed || !date) {
+            pendingDateRef.current = null;
             return;
           }
-          if (date) {
-            setPendingDate(date);
-            setPickerStep('time');
-          }
+          // Store chosen date, then open time picker after a short delay
+          pendingDateRef.current = date;
+          pickerStepRef.current = 'time';
+          setPickerStep('time');
+          setTimeout(() => {
+            setShowPicker(activePickerType.current);
+          }, 100);
           return;
         }
-        if (pickerStep === 'time') {
-          setPickerStep('date');
-          setPendingDate(null);
-          if (!isDismissed && date) {
-            if (showPicker === 'due') setDueDate(date.getTime());
-            else if (showPicker === 'reminder') setReminderDate(date.getTime());
-          }
+
+        if (pickerStepRef.current === 'time') {
           setShowPicker(null);
+          pickerStepRef.current = 'date';
+          setPickerStep('date');
+          if (!isDismissed && date && pendingDateRef.current) {
+            const merged = new Date(pendingDateRef.current);
+            merged.setHours(date.getHours(), date.getMinutes(), 0, 0);
+            if (activePickerType.current === 'due') setDueDate(merged.getTime());
+            else setReminderDate(merged.getTime());
+          }
+          pendingDateRef.current = null;
           return;
         }
       }
+
+      // iOS — single datetime picker
       setShowPicker(null);
       if (!isDismissed && date) {
-        if (showPicker === 'due') setDueDate(date.getTime());
-        else if (showPicker === 'reminder') setReminderDate(date.getTime());
+        if (activePickerType.current === 'due') setDueDate(date.getTime());
+        else setReminderDate(date.getTime());
       }
     },
-    [pickerStep, showPicker]
+    [] // no deps needed — all state accessed via refs
   );
 
-  const openDatePicker = (type: 'due' | 'reminder') => {
-    setShowPicker(type);
+  const openDatePicker = useCallback((type: 'due' | 'reminder') => {
+    activePickerType.current = type;
+    pickerStepRef.current = 'date';
+    pendingDateRef.current = null;
     setPickerStep('date');
-    setPendingDate(null);
-  };
+    setShowPicker(type);
+  }, []);
 
   const formatDate = (ts: number) => new Date(ts).toLocaleDateString(undefined, { dateStyle: 'medium' });
   const formatTime = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { timeStyle: 'short' });
@@ -464,7 +481,7 @@ export function TaskEditorScreen() {
         <TouchableOpacity style={styles.row} onPress={() => openDatePicker('reminder')}>
           <Ionicons name="alarm-outline" size={22} color={theme.colors.accent} />
           <Text style={[styles.rowText, !reminderDate && styles.rowPlaceholder]}>
-            {reminderDate ? `Reminder: ${formatDate(reminderDate)} ${formatTime(reminderDate)}` : 'Reminder'}
+            {reminderDate ? `Reminder: ${formatDate(reminderDate)} ${formatTime(reminderDate)}` : 'Set reminder'}
           </Text>
           {reminderDate && (
             <TouchableOpacity style={styles.clearBtn} onPress={() => setReminderDate(null)}>
@@ -472,6 +489,21 @@ export function TaskEditorScreen() {
             </TouchableOpacity>
           )}
         </TouchableOpacity>
+        {reminderDate && (
+          <View style={[styles.chipRow, { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm }]}>
+            <Text style={[styles.chipText, { color: theme.colors.textMuted, marginRight: 4 }]}>Snooze:</Text>
+            {[{ label: '10m', min: 10 }, { label: '30m', min: 30 }, { label: '1h', min: 60 }, { label: '3h', min: 180 }].map((s) => (
+              <TouchableOpacity
+                key={s.label}
+                style={[styles.chip, { borderColor: theme.colors.accent, backgroundColor: theme.colors.accent + '15' }]}
+                onPress={() => setReminderDate((d) => (d ? d + s.min * 60000 : Date.now() + s.min * 60000))}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.chipText, { color: theme.colors.accent, fontWeight: '600' }]}>{s.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Repeat */}
         <View style={styles.section}>
@@ -560,19 +592,16 @@ export function TaskEditorScreen() {
 
       {showPicker && (
         <DateTimePicker
-          value={
-            Platform.OS === 'android' && pickerStep === 'time' && pendingDate
-              ? pendingDate
-              : dueDate && showPicker === 'due'
-              ? new Date(dueDate)
-              : reminderDate && showPicker === 'reminder'
-              ? new Date(reminderDate)
-              : new Date()
-          }
+          value={(() => {
+            if (Platform.OS === 'android' && pickerStep === 'time' && pendingDateRef.current) return pendingDateRef.current;
+            if (activePickerType.current === 'due' && dueDate) return new Date(dueDate);
+            if (activePickerType.current === 'reminder' && reminderDate) return new Date(reminderDate);
+            return new Date();
+          })()}
           mode={Platform.OS === 'android' ? pickerStep : 'datetime'}
           display="default"
           onChange={onDatePick}
-          minimumDate={new Date()}
+          minimumDate={pickerStep === 'date' ? new Date() : undefined}
         />
       )}
     </View>

@@ -20,6 +20,7 @@ export interface Note {
   tagIds: string[];
   isFavorite: boolean;
   isPinned: boolean;
+  color: string | null; // hex color, null = default
   category: SmartCategory;
   attachments: NoteAttachment[];
   reminderId: string | null;
@@ -72,6 +73,7 @@ export interface Reminder {
   customRepeatDays?: number[];
   customRepeatIntervalMinutes?: number;
   notifeeId?: string;
+  snoozedUntil?: number; // timestamp if currently snoozed
   createdAt: number;
 }
 

@@ -4,10 +4,10 @@ import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile
 const IS_DEV = __DEV__;
 
 export const AD_UNITS = {
-  banner:       IS_DEV ? TestIds.ADAPTIVE_BANNER : 'ca-app-pub-7724552016512949/1078833867',
-  interstitial: IS_DEV ? TestIds.INTERSTITIAL    : 'ca-app-pub-7724552016512949/8913910092',
-  rewarded:     IS_DEV ? TestIds.REWARDED        : 'ca-app-pub-7724552016512949/1848990053',
-  appOpen:      IS_DEV ? TestIds.APP_OPEN        : 'ca-app-pub-7724552016512949/5564873784',
+  banner:       IS_DEV ? TestIds.ADAPTIVE_BANNER : 'ca-app-pub-7724552016512949/6264757761',
+  interstitial: IS_DEV ? TestIds.INTERSTITIAL    : 'ca-app-pub-7724552016512949/4538810802',
+  rewarded:     IS_DEV ? TestIds.REWARDED        : 'ca-app-pub-7724552016512949/3854216842',
+  appOpen:      IS_DEV ? TestIds.APP_OPEN        : 'ca-app-pub-7724552016512949/5937454709',
 };
 
 let interstitial: ReturnType<typeof InterstitialAd.createForAdRequest> | null = null;

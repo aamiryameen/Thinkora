@@ -380,7 +380,7 @@ export function MyDayScreen() {
 
         {/* ── Overdue Alert ── */}
         {overdueTasks.length > 0 && (
-          <TouchableOpacity style={styles.overdueCard} onPress={() => navigation.navigate('Home' as any)} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.overdueCard} onPress={() => navigation.getParent()?.navigate('Tasks')} activeOpacity={0.7}>
             <Ionicons name="alert-circle" size={22} color={theme.colors.error} />
             <Text style={styles.overdueText}>{overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''} need attention</Text>
             <Ionicons name="chevron-forward" size={16} color={theme.colors.error} />
@@ -457,7 +457,7 @@ export function MyDayScreen() {
               <Text style={styles.sectionCount}>{pendingTasks.length}</Text>
             </Text>
             {pendingTasks.length > 0 && (
-              <TouchableOpacity onPress={() => navigation.navigate('Home' as any)}>
+              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Tasks')}>
                 <Text style={styles.seeAll}>See all</Text>
               </TouchableOpacity>
             )}

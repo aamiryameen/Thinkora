@@ -28,6 +28,7 @@ const FEATURE_LINKS: QuickLink[] = [
   { label: 'Badges', icon: 'trophy-outline', color: '#F59E0B', route: 'Badges' },
   { label: 'Categories', icon: 'pricetags-outline', color: '#10B981', route: 'CategoryManager' },
   { label: 'Reports', icon: 'bar-chart-outline', color: '#4A90D9', route: 'Reports' },
+  { label: 'Gantt', icon: 'git-branch-outline', color: '#0EA5E9', route: 'Gantt' },
 ];
 
 export function DashboardScreen() {

@@ -3,10 +3,12 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MyDayScreen } from '../screens/MyDayScreen';
 import { TaskListScreen } from '../screens/TaskListScreen';
 import { TaskEditorScreen } from '../screens/TaskEditorScreen';
 import { CalendarScreen } from '../screens/CalendarScreen';
+import { QuotesScreen } from '../screens/QuotesScreen';
 import { NoteListScreen } from '../screens/NoteListScreen';
 import { NoteEditorScreen } from '../screens/NoteEditorScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
@@ -21,6 +23,9 @@ import { CategoryManagerScreen } from '../screens/CategoryManagerScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { PrivacyPolicyScreen } from '../screens/PrivacyPolicyScreen';
+import { SearchScreen } from '../screens/SearchScreen';
+import { AIMoodInsightsScreen } from '../screens/AIMoodInsightsScreen';
+import { GanttScreen } from '../screens/GanttScreen';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList, HomeTabParamList } from './types';
 
@@ -30,13 +35,14 @@ const Tab = createBottomTabNavigator<HomeTabParamList>();
 const TAB_ICONS: Record<keyof HomeTabParamList, { focused: string; default: string }> = {
   MyDay: { focused: 'home', default: 'home-outline' },
   Tasks: { focused: 'checkbox', default: 'checkbox-outline' },
-  Calendar: { focused: 'calendar', default: 'calendar-outline' },
+  Quotes: { focused: 'chatbubble-ellipses', default: 'chatbubble-ellipses-outline' },
   Notes: { focused: 'document-text', default: 'document-text-outline' },
   Dashboard: { focused: 'grid', default: 'grid-outline' },
 };
 
 function HomeTabs() {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -48,7 +54,8 @@ function HomeTabs() {
           backgroundColor: theme.colors.tabBarBg,
           borderTopWidth: 0,
           paddingTop: 8,
-          height: 64,
+          paddingBottom: insets.bottom,
+          height: 64 + insets.bottom,
           elevation: 12,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },
@@ -64,7 +71,7 @@ function HomeTabs() {
     >
       <Tab.Screen name="MyDay" component={MyDayScreen} options={{ tabBarLabel: 'Home' }} />
       <Tab.Screen name="Tasks" component={TaskListScreen} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} />
+      <Tab.Screen name="Quotes" component={QuotesScreen} />
       <Tab.Screen name="Notes" component={NoteListScreen} />
       <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ tabBarLabel: 'More' }} />
     </Tab.Navigator>
@@ -95,6 +102,9 @@ export function AppNavigator() {
         <Stack.Screen name="Reports" component={ReportsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="Search" component={SearchScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="AIMoodInsights" component={AIMoodInsightsScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="Gantt" component={GanttScreen} options={{ presentation: 'card' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

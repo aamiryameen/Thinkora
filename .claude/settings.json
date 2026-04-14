@@ -40,7 +40,16 @@
       "Bash(cp /tmp/tablet7_tasks.png ~/Desktop/)",
       "Bash(cp /tmp/tablet7_notes.png ~/Desktop/)",
       "Bash(cp /tmp/tablet10_dashboard.png ~/Desktop/)",
-      "Bash(cp /tmp/tablet10_tasks.png ~/Desktop/)"
+      "Bash(cp /tmp/tablet10_tasks.png ~/Desktop/)",
+      "Bash(gh repo:*)",
+      "Bash(git --version)",
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(grep -r \"snooze\\\\|Snooze\" /Users/apple/Projects/NotioX/src --include=*.ts*)",
+      "Bash(ls /Users/apple/Projects/NotioX/*.js /Users/apple/Projects/NotioX/*.ts)",
+      "Bash(ls /Users/apple/Projects/NotioX/*.js)",
+      "Bash(find /Users/apple/Projects/NotioX -type f -path */src/main/*widget*)"
     ]
   }
 }

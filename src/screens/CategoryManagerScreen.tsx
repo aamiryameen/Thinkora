@@ -37,7 +37,8 @@ export function CategoryManagerScreen() {
   const handleEdit = (cat: TaskCategory) => {
     setEditId(cat.id);
     setName(cat.name);
-    setColorIdx(COLORS.indexOf(cat.color) >= 0 ? COLORS.indexOf(cat.color) : 0);
+    const ci = (COLORS as string[]).indexOf(cat.color);
+    setColorIdx(ci >= 0 ? ci : 0);
     setIconIdx(ICONS.indexOf(cat.icon) >= 0 ? ICONS.indexOf(cat.icon) : 0);
     setShowAdd(true);
   };

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -9,7 +9,11 @@ import { useApp } from '../context/AppContext';
 import { THEME_PRESETS } from '../core/theme';
 import { Icon } from '../components/Icons';
 import { exportTasksToHtml, exportNotesToHtml } from '../services/pdfExportService';
-import { showQuickCaptureNotification, hideQuickCaptureNotification } from '../services/quickCaptureService';
+import {
+  showQuickCaptureNotification,
+  hideQuickCaptureNotification,
+  isQuickCaptureEnabled,
+} from '../services/quickCaptureService';
 import { PinSetupScreen } from './AppLockScreen';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -29,6 +33,10 @@ export function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [quickCapture, setQuickCapture] = useState(false);
+
+  useEffect(() => {
+    isQuickCaptureEnabled().then(setQuickCapture);
+  }, []);
 
   const handleExportTasks = () => exportTasksToHtml(tasks, 'My Tasks');
   const handleExportNotes = () => exportNotesToHtml(notes, 'My Notes');
@@ -57,10 +65,6 @@ export function SettingsScreen() {
     }
   };
 
-  if (showPinSetup) {
-    return <PinSetupScreen onComplete={handlePinComplete} />;
-  }
-
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
     header: { paddingHorizontal: theme.spacing.lg, paddingTop: insets.top + theme.spacing.md, paddingBottom: theme.spacing.md, backgroundColor: theme.colors.surface },
@@ -83,6 +87,10 @@ export function SettingsScreen() {
     colorDot: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: 'transparent' },
     colorDotSelected: { borderColor: theme.colors.text },
   }), [theme, insets]);
+
+  if (showPinSetup) {
+    return <PinSetupScreen onComplete={handlePinComplete} />;
+  }
 
   return (
     <View style={styles.container}>

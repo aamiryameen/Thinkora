@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Thinkora</string>
+    <string name="widget_tasks_desc">Shows your pending tasks on the home screen</string>
+    <string name="widget_habits_desc">Shows today\'s habit progress on the home screen</string>
 </resources>

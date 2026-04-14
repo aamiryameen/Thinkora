@@ -2,6 +2,8 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/types';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../context/ThemeContext';
 import { useFeatures } from '../context/FeaturesContext';
@@ -20,7 +22,7 @@ function dateKey(d: Date): string {
 }
 
 export function MoodJournalScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { journalEntries, addJournalEntry, updateJournalEntry, deleteJournalEntry, getJournalForDate } = useFeatures();
@@ -100,11 +102,21 @@ export function MoodJournalScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.title}>Mood Journal</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('AIMoodInsights')}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#7C3AED20', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="sparkles" size={14} color="#7C3AED" />
+            <Text style={{ fontSize: 12, fontWeight: '700', color: '#7C3AED' }}>AI Insights</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Mood Journal</Text>
         </View>
       </View>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
