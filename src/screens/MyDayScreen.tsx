@@ -1,11 +1,12 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { AdBanner } from '../components/AdBanner';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { TaskCard } from '../components/TaskCard';
+import { StreakCard } from '../components/StreakCard';
 import { useApp } from '../context/AppContext';
 import { useFeatures } from '../context/FeaturesContext';
 import { useTheme } from '../context/ThemeContext';
@@ -55,7 +56,7 @@ export function MyDayScreen() {
   const navigation = useNavigation<Nav>();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { tasks, toggleTaskComplete, getTaskCategory, taskStats } = useApp();
+  const { tasks, toggleTaskComplete, getTaskCategory, taskStats, streak } = useApp();
   const { habits, toggleHabitDate, getHabitStreak, journalEntries, badges } = useFeatures();
 
   const now = new Date();
@@ -377,6 +378,9 @@ export function MyDayScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* ── Daily Streak ── */}
+        <StreakCard streak={streak} />
 
         {/* ── Overdue Alert ── */}
         {overdueTasks.length > 0 && (

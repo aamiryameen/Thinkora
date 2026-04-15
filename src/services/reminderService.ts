@@ -110,7 +110,12 @@ export async function scheduleTimeReminder(reminder: Reminder): Promise<string |
           { title: 'Dismiss', pressAction: { id: 'dismiss' } },
         ],
       },
-      data: { noteId: reminder.noteId, reminderId: reminder.id },
+      data: {
+            noteId: reminder.noteId,
+            reminderId: reminder.id,
+            taskId: reminder.id.startsWith('task-reminder-') ? reminder.noteId : '',
+            type: reminder.id.startsWith('task-reminder-') ? 'task-reminder' : 'note-reminder',
+          },
     },
     trigger
   );
@@ -185,7 +190,7 @@ export async function fireTestNotification(title: string, body: string): Promise
   console.log('[Test] Notification displayed with alarm sound');
 }
 
-/** Register background notification event handler for snooze actions */
+/** Register background notification event handler for snooze actions + deep linking */
 export function registerNotificationHandlers(): void {
   if (Platform.OS !== 'android' || !notifee) return;
   notifee.onBackgroundEvent(async ({ type, detail }) => {
@@ -194,8 +199,18 @@ export function registerNotificationHandlers(): void {
       const actionId = detail.pressAction?.id;
       if (actionId === 'dismiss' && detail.notification?.id) {
         await notifee!.cancelNotification(detail.notification.id);
+        return;
       }
-      // snooze_10 / snooze_60 are handled in the JS app via onForegroundEvent
+      // Deep link on default press action (notification body tap)
+      if (actionId === 'default') {
+        const { handleNotificationDeepLink } = require('./navigationService');
+        handleNotificationDeepLink(detail.notification?.data);
+      }
+    }
+    // Also handle PRESS event (notification body tap without action buttons)
+    if (type === EventType.PRESS) {
+      const { handleNotificationDeepLink } = require('./navigationService');
+      handleNotificationDeepLink(detail.notification?.data);
     }
   });
 }

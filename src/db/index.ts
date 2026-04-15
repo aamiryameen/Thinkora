@@ -1,6 +1,7 @@
 import { Database } from '@nozbe/watermelondb';
 import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite';
 import { schema } from './schema';
+import { migrations } from './migrations';
 import { NoteModel } from './models/NoteModel';
 import { FolderModel } from './models/FolderModel';
 import { TagModel } from './models/TagModel';
@@ -17,9 +18,9 @@ import { SettingModel } from './models/SettingModel';
 
 const adapter = new SQLiteAdapter({
   schema,
+  migrations,
   dbName: 'thinkora',
-  // migrations: migrations, // add when schema version bumps
-  jsi: true, // use JSI for faster sync on Android
+  jsi: true,
   onSetUpError: (error) => {
     console.error('[WatermelonDB] Setup error:', error);
   },

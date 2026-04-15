@@ -26,7 +26,9 @@ import { PrivacyPolicyScreen } from '../screens/PrivacyPolicyScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { AIMoodInsightsScreen } from '../screens/AIMoodInsightsScreen';
 import { GanttScreen } from '../screens/GanttScreen';
+import { ShareProgressScreen } from '../screens/ShareProgressScreen';
 import { useTheme } from '../context/ThemeContext';
+import { navigationRef } from '../services/navigationService';
 import type { RootStackParamList, HomeTabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -81,7 +83,7 @@ function HomeTabs() {
 export function AppNavigator() {
   const { theme } = useTheme();
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
@@ -105,6 +107,7 @@ export function AppNavigator() {
         <Stack.Screen name="Search" component={SearchScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="AIMoodInsights" component={AIMoodInsightsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Gantt" component={GanttScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="ShareProgress" component={ShareProgressScreen} options={{ presentation: 'card' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

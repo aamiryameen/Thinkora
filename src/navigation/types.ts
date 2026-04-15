@@ -21,6 +21,7 @@ export type RootStackParamList = {
   PrivacyPolicy: undefined;
   Search: undefined;
   Gantt: undefined;
+  ShareProgress: undefined;
 };
 
 export type NoteEditorParams = {

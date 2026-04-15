@@ -9,6 +9,7 @@ import { scheduleDailyDigest } from '../services/smartNotificationService';
 import { DEFAULT_POMODORO } from '../core/constants';
 import { categoryColors } from '../core/theme';
 import { generateId } from '../utils/id';
+import { useDebouncedSave } from '../utils/useDebouncedSave';
 import { useApp } from './AppContext';
 import type {
   Habit, HabitFrequency, JournalEntry, MoodLevel,
@@ -114,7 +115,7 @@ interface FeaturesContextValue {
 const FeaturesContext = createContext<FeaturesContextValue | null>(null);
 
 export function FeaturesProvider({ children }: { children: React.ReactNode }) {
-  const { tasks } = useApp();
+  const { tasks, recordStreakActivity } = useApp();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [pomodoroSessions, setPomodoroSessions] = useState<PomodoroSession[]>([]);
@@ -146,15 +147,24 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  // ─── Auto-save ──────────────────────────────────
-  useEffect(() => { if (loaded) storage.setHabits(habits); }, [loaded, habits]);
+  // ─── Auto-save (debounced to prevent write contention) ───
+  const saveHabits = useCallback((d: Habit[]) => storage.setHabits(d), []);
+  const saveJournal = useCallback((d: JournalEntry[]) => storage.setJournalEntries(d), []);
+  const savePomodoro = useCallback((d: PomodoroSession[]) => storage.setPomodoroSessions(d), []);
+  const saveLists = useCallback((d: SharedList[]) => storage.setSharedLists(d), []);
+  const saveTemplates = useCallback((d: TaskTemplate[]) => storage.setTaskTemplates(d), []);
+  const saveBadges = useCallback((d: Badge[]) => storage.setBadges(d), []);
+
+  useDebouncedSave(loaded, habits, saveHabits);
+  useDebouncedSave(loaded, journalEntries, saveJournal);
+  useDebouncedSave(loaded, pomodoroSessions, savePomodoro);
+  useDebouncedSave(loaded, sharedLists, saveLists);
+  useDebouncedSave(loaded, taskTemplates, saveTemplates);
+  useDebouncedSave(loaded, badges, saveBadges);
+
+  // Side-effects — immediate
   useEffect(() => { if (loaded) syncWidgetData([], habits); }, [loaded, habits]);
   useEffect(() => { if (loaded) scheduleDailyDigest(tasks, habits); }, [loaded, tasks, habits]);
-  useEffect(() => { if (loaded) storage.setJournalEntries(journalEntries); }, [loaded, journalEntries]);
-  useEffect(() => { if (loaded) storage.setPomodoroSessions(pomodoroSessions); }, [loaded, pomodoroSessions]);
-  useEffect(() => { if (loaded) storage.setSharedLists(sharedLists); }, [loaded, sharedLists]);
-  useEffect(() => { if (loaded) storage.setTaskTemplates(taskTemplates); }, [loaded, taskTemplates]);
-  useEffect(() => { if (loaded) storage.setBadges(badges); }, [loaded, badges]);
 
   // ─── Habits ─────────────────────────────────────
   const addHabit = useCallback((h: Omit<Habit, 'id' | 'createdAt' | 'completedDates' | 'archived'>): Habit => {
@@ -176,9 +186,11 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
       if (h.id !== id) return h;
       const dates = h.completedDates ?? [];
       const has = dates.includes(date);
+      // Record streak when checking (not unchecking) a habit
+      if (!has) recordStreakActivity().catch(() => {});
       return { ...h, completedDates: has ? dates.filter((d) => d !== date) : [...dates, date] };
     }));
-  }, []);
+  }, [recordStreakActivity]);
 
   const getHabitStreak = useCallback((habit: Habit): number => {
     const dates = habit.completedDates ?? [];
@@ -203,8 +215,9 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
   const addJournalEntry = useCallback((mood: MoodLevel, note: string, date?: string): JournalEntry => {
     const entry: JournalEntry = { id: generateId(), date: date ?? todayKey(), mood, note, createdAt: Date.now() };
     setJournalEntries((prev) => [entry, ...prev]);
+    recordStreakActivity().catch(() => {});
     return entry;
-  }, []);
+  }, [recordStreakActivity]);
 
   const updateJournalEntry = useCallback((id: string, patch: Partial<JournalEntry>) => {
     setJournalEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));

@@ -13,12 +13,19 @@ import type {
   Task, TaskCategory, SubTask, TasksFilter, TaskSortField, AppSettings,
 } from '../types';
 import { generateId } from '../utils/id';
+import { useDebouncedSave } from '../utils/useDebouncedSave';
 import { categoryColors } from '../core/theme';
 import { syncWidgetData } from '../services/widgetService';
 import {
   syncSmartDeadlineReminders,
   scheduleOverdueCheck,
 } from '../services/smartNotificationService';
+import {
+  recordActivity,
+  checkStreakOnAppOpen,
+  loadStreak,
+  type StreakData,
+} from '../services/streakService';
 
 // ─── Default task categories ────────────────────────
 const DEFAULT_CATEGORIES: TaskCategory[] = [
@@ -39,6 +46,7 @@ interface AppState {
   taskCategories: TaskCategory[];
   taskFilter: TasksFilter;
   settings: AppSettings;
+  streak: StreakData;
 }
 
 interface TaskStats {
@@ -109,6 +117,10 @@ interface AppContextValue extends AppState {
   // Settings
   updateSettings: (patch: Partial<AppSettings>) => void;
 
+  // Streak
+  streak: StreakData;
+  recordStreakActivity: () => Promise<number | null>;
+
   isHydrated: boolean;
 }
 
@@ -153,6 +165,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [taskCategories, setTaskCategories] = useState<TaskCategory[]>([]);
   const [taskFilter, setTaskFilterState] = useState<TasksFilter>(defaultTaskFilter);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [streak, setStreak] = useState<StreakData>({
+    currentStreak: 0, longestStreak: 0, lastActiveDate: '',
+    activeDates: [], freezesUsedThisWeek: 0, weekStartDate: '', milestones: [],
+  });
   const [loaded, setLoaded] = useState(false);
 
   // ─── Hydration ──────────────────────────────────────
@@ -177,10 +193,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setTasks(tk);
         setTaskCategories(tc.length > 0 ? tc : DEFAULT_CATEGORIES);
         setSettings(s);
+        // Load and check streak
+        const streakData = await checkStreakOnAppOpen();
+        setStreak(streakData);
         setLoaded(true);
       } catch (err) {
         console.error('[Hydration] FAILED to load data:', err);
-        setLoaded(true); // still mark as loaded so app doesn't hang
+        setLoaded(true);
       }
     })();
   }, []);
@@ -189,10 +208,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (Platform.OS === 'android') {
       createNotificationChannel();
       requestNotificationPermission();
+      // Check if app was launched by tapping a notification (app was killed)
+      try {
+        const notifeeInit = require('@notifee/react-native').default;
+        notifeeInit.getInitialNotification().then((initial: any) => {
+          if (initial?.notification?.data) {
+            const { handleNotificationDeepLink } = require('../services/navigationService');
+            handleNotificationDeepLink(initial.notification.data);
+          }
+        });
+      } catch {}
       // Register foreground notification event handler for snooze actions
       try {
         const notifeeModule = require('@notifee/react-native').default;
         const { EventType } = require('@notifee/react-native');
+        const { handleNotificationDeepLink } = require('../services/navigationService');
         notifeeModule.onForegroundEvent(({ type, detail }: { type: number; detail: any }) => {
           if (type === EventType.ACTION_PRESS) {
             const actionId = detail.pressAction?.id;
@@ -205,37 +235,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             } else if (actionId === 'snooze_60' && reminderId) {
               const r = reminders.find((rm: Reminder) => rm.id === reminderId);
               if (r) snoozeReminderService(r, 60);
+            } else if (actionId === 'default') {
+              handleNotificationDeepLink(detail.notification?.data);
             }
+          }
+          // Notification body tap (not an action button)
+          if (type === EventType.PRESS) {
+            handleNotificationDeepLink(detail.notification?.data);
           }
         });
       } catch {}
     }
   }, [reminders]);
 
-  // ─── Auto-save ──────────────────────────────────────
-  useEffect(() => { if (loaded) storage.setNotes(notes).catch(e => console.error('[Save] notes failed:', e)); }, [loaded, notes]);
-  useEffect(() => { if (loaded) storage.setFolders(folders).catch(e => console.error('[Save] folders failed:', e)); }, [loaded, folders]);
-  useEffect(() => { if (loaded) storage.setTags(tags).catch(e => console.error('[Save] tags failed:', e)); }, [loaded, tags]);
-  useEffect(() => { if (loaded) storage.setReminders(reminders).catch(e => console.error('[Save] reminders failed:', e)); }, [loaded, reminders]);
-  useEffect(() => {
-    if (loaded) {
-      console.log('[Save] Saving', tasks.length, 'tasks to DB...');
-      storage.setTasks(tasks)
-        .then(() => console.log('[Save] Tasks saved successfully'))
-        .catch(e => console.error('[Save] tasks FAILED:', e));
-    }
-  }, [loaded, tasks]);
+  // ─── Auto-save (debounced to prevent write contention) ───
+  // Storage writes are debounced — waits 800ms after last change.
+  // Side-effects (widget, notifications) remain immediate.
+  const saveNotes = useCallback((d: Note[]) => storage.setNotes(d), []);
+  const saveFolders = useCallback((d: Folder[]) => storage.setFolders(d), []);
+  const saveTags = useCallback((d: Tag[]) => storage.setTags(d), []);
+  const saveReminders = useCallback((d: Reminder[]) => storage.setReminders(d), []);
+  const saveTasks = useCallback((d: Task[]) => storage.setTasks(d), []);
+  const saveCategories = useCallback((d: TaskCategory[]) => storage.setTaskCategories(d), []);
+  const saveSettings = useCallback((d: AppSettings) => storage.setSettings(d), []);
+
+  useDebouncedSave(loaded, notes, saveNotes);
+  useDebouncedSave(loaded, folders, saveFolders);
+  useDebouncedSave(loaded, tags, saveTags);
+  useDebouncedSave(loaded, reminders, saveReminders);
+  useDebouncedSave(loaded, tasks, saveTasks);
+  useDebouncedSave(loaded, taskCategories, saveCategories);
+  useDebouncedSave(loaded, settings, saveSettings, 1500); // settings change less often
+
+  // Side-effects — immediate (lightweight, no DB writes)
   useEffect(() => { if (loaded) syncWidgetData(tasks, []); }, [loaded, tasks]);
   useEffect(() => { if (loaded) syncSmartDeadlineReminders(tasks).catch(() => {}); }, [loaded, tasks]);
   useEffect(() => { if (loaded) scheduleOverdueCheck(tasks).catch(() => {}); }, [loaded, tasks]);
-  useEffect(() => { if (loaded) storage.setTaskCategories(taskCategories).catch(e => console.error('[Save] categories failed:', e)); }, [loaded, taskCategories]);
-  useEffect(() => { if (loaded) storage.setSettings(settings).catch(e => console.error('[Save] settings failed:', e)); }, [loaded, settings]);
 
   // ─── Notes ──────────────────────────────────────────
   const addNote = useCallback((note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>): Note => {
     const now = Date.now();
     const newNote: Note = { ...note, id: generateId(), createdAt: now, updatedAt: now };
     setNotes((prev) => [newNote, ...prev]);
+    recordActivity().then(r => setStreak(r.streak)).catch(() => {});
     return newNote;
   }, []);
 
@@ -441,7 +483,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const getTask = useCallback((id: string) => tasks.find((t) => t.id === id), [tasks]);
 
   const toggleTaskComplete = useCallback((id: string) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !t.completed, updatedAt: Date.now() } : t)));
+    setTasks((prev) => {
+      const task = prev.find(t => t.id === id);
+      // Record streak activity when completing (not uncompleting) a task
+      if (task && !task.completed) recordActivity().then(r => setStreak(r.streak)).catch(() => {});
+      return prev.map((t) => (t.id === id ? { ...t, completed: !t.completed, updatedAt: Date.now() } : t));
+    });
   }, []);
 
   const toggleSubTaskComplete = useCallback((taskId: string, subTaskId: string) => {
@@ -560,11 +607,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSettings((s) => ({ ...s, ...patch }));
   }, []);
 
+  // ─── Streak ───────────────────────────────────────
+  const recordStreakActivity = useCallback(async (): Promise<number | null> => {
+    try {
+      const { streak: updated, newMilestone } = await recordActivity();
+      setStreak(updated);
+      return newMilestone;
+    } catch {
+      return null;
+    }
+  }, []);
+
   // ─── Context value ─────────────────────────────────
   const value = useMemo<AppContextValue>(
     () => ({
       notes, folders, tags, reminders, filter, isHydrated: loaded,
-      tasks, taskCategories, taskFilter, settings,
+      tasks, taskCategories, taskFilter, settings, streak,
       addNote, updateNote, deleteNote, getNote, toggleFavorite, togglePin, setNoteCategory, setNoteColor,
       addFolder, updateFolder, deleteFolder, getFolder,
       addTag, updateTag, deleteTag, getTag,
@@ -574,11 +632,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
-      updateSettings,
+      updateSettings, recordStreakActivity,
     }),
     [
       notes, folders, tags, reminders, filter, loaded,
-      tasks, taskCategories, taskFilter, settings,
+      tasks, taskCategories, taskFilter, settings, streak,
       addNote, updateNote, deleteNote, getNote, toggleFavorite, togglePin, setNoteCategory, setNoteColor,
       addFolder, updateFolder, deleteFolder, getFolder,
       addTag, updateTag, deleteTag, getTag,
@@ -588,7 +646,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
-      updateSettings,
+      updateSettings, recordStreakActivity,
     ]
   );
 
