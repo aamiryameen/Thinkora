@@ -22,6 +22,7 @@ export type RootStackParamList = {
   Search: undefined;
   Gantt: undefined;
   ShareProgress: undefined;
+  Sketch: undefined;
 };
 
 export type NoteEditorParams = {

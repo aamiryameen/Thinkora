@@ -8,6 +8,8 @@ import { useTheme } from '../context/ThemeContext';
 import { useApp } from '../context/AppContext';
 import { THEME_PRESETS } from '../core/theme';
 import { Icon } from '../components/Icons';
+// @ts-ignore — importing version from package.json
+import { version as appVersion } from '../../package.json';
 import { exportTasksToHtml, exportNotesToHtml } from '../services/pdfExportService';
 import {
   showQuickCaptureNotification,
@@ -230,7 +232,7 @@ export function SettingsScreen() {
                 <Ionicons name="information-circle-outline" size={20} color="#4A90D9" />
               </View>
               <Text style={styles.rowLabel}>Version</Text>
-              <Text style={styles.rowValue}>1.0.0</Text>
+              <Text style={styles.rowValue}>{appVersion}</Text>
             </View>
           </View>
         </View>

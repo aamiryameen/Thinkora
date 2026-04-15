@@ -30,6 +30,7 @@ const FEATURE_LINKS: QuickLink[] = [
   { label: 'Reports', icon: 'bar-chart-outline', color: '#4A90D9', route: 'Reports' },
   { label: 'Gantt', icon: 'git-branch-outline', color: '#0EA5E9', route: 'Gantt' },
   { label: 'Share', icon: 'share-social-outline', color: '#EC4899', route: 'ShareProgress' },
+  { label: 'Sketch', icon: 'brush-outline', color: '#FF6347', route: 'Sketch' },
 ];
 
 export function DashboardScreen() {

@@ -27,6 +27,7 @@ import { SearchScreen } from '../screens/SearchScreen';
 import { AIMoodInsightsScreen } from '../screens/AIMoodInsightsScreen';
 import { GanttScreen } from '../screens/GanttScreen';
 import { ShareProgressScreen } from '../screens/ShareProgressScreen';
+import { SketchScreen } from '../screens/SketchScreen';
 import { useTheme } from '../context/ThemeContext';
 import { navigationRef } from '../services/navigationService';
 import type { RootStackParamList, HomeTabParamList } from './types';
@@ -108,6 +109,7 @@ export function AppNavigator() {
         <Stack.Screen name="AIMoodInsights" component={AIMoodInsightsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Gantt" component={GanttScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="ShareProgress" component={ShareProgressScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="Sketch" component={SketchScreen} options={{ presentation: 'card' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
