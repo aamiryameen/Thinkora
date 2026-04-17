@@ -1,6 +1,5 @@
 import { InterstitialAd, AdEventType, TestIds } from 'react-native-google-mobile-ads';
 
-// Always use test IDs in dev to guarantee ad delivery during development
 const IS_DEV = __DEV__;
 
 export const AD_UNITS = {
@@ -13,9 +12,17 @@ export const AD_UNITS = {
 let interstitial: ReturnType<typeof InterstitialAd.createForAdRequest> | null = null;
 let interstitialLoaded = false;
 
+// Track when last interstitial was shown to avoid spamming
+let lastInterstitialTime = 0;
+const MIN_INTERSTITIAL_INTERVAL = 120000; // 2 minutes between interstitials
+
+// Count user actions to show interstitial every N actions
+let actionCount = 0;
+const ACTIONS_BEFORE_AD = 4; // show after every 4 saves/completes
+
 export function loadInterstitial() {
   interstitial = InterstitialAd.createForAdRequest(AD_UNITS.interstitial, {
-    requestNonPersonalizedAdsOnly: true,
+    requestNonPersonalizedAdsOnly: false,
   });
 
   interstitial.addAdEventListener(AdEventType.LOADED, () => {
@@ -26,7 +33,6 @@ export function loadInterstitial() {
   interstitial.addAdEventListener(AdEventType.ERROR, (error) => {
     interstitialLoaded = false;
     if (__DEV__) console.warn('[Ads] Interstitial error:', error);
-    // Retry after 30s on error
     setTimeout(loadInterstitial, 30000);
   });
 
@@ -38,10 +44,28 @@ export function loadInterstitial() {
   interstitial.load();
 }
 
+/**
+ * Show interstitial ad at natural break points.
+ * Respects minimum interval (2 min) and action count (every 4 actions).
+ */
 export function showInterstitial() {
   if (interstitial && interstitialLoaded) {
-    interstitial.show();
-  } else if (__DEV__) {
-    console.log('[Ads] Interstitial not ready yet');
+    const now = Date.now();
+    if (now - lastInterstitialTime >= MIN_INTERSTITIAL_INTERVAL) {
+      interstitial.show();
+      lastInterstitialTime = now;
+    }
+  }
+}
+
+/**
+ * Call this on user actions (save task, save note, complete task, etc.)
+ * Shows interstitial every N actions — non-intrusive.
+ */
+export function trackActionForAd() {
+  actionCount += 1;
+  if (actionCount >= ACTIONS_BEFORE_AD) {
+    actionCount = 0;
+    showInterstitial();
   }
 }

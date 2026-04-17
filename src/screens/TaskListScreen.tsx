@@ -13,6 +13,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '../components/Icons';
 import { TaskCard } from '../components/TaskCard';
+import { AdBanner } from '../components/AdBanner';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
@@ -302,6 +303,7 @@ export function TaskListScreen() {
       >
         <Icon name="add" size={28} color="#FFF" />
       </TouchableOpacity>
+      <AdBanner />
     </View>
   );
 }

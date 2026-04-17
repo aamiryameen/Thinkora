@@ -18,6 +18,7 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               add(SpeechPackage())
               add(WidgetBridgePackage())
+              add(InAppUpdatePackage())
             }
 
         override fun getJSMainModuleName(): String = "index"

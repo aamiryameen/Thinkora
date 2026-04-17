@@ -10,6 +10,7 @@ import mobileAds from 'react-native-google-mobile-ads';
 import { loadInterstitial } from './src/services/ads';
 import { restoreQuickCaptureIfEnabled } from './src/services/quickCaptureService';
 import { runMigrationIfNeeded } from './src/services/migrateFromAsyncStorage';
+import { checkForUpdate, startUpdate } from './src/services/updateService';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -18,6 +19,7 @@ import { FeaturesProvider } from './src/context/FeaturesContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { AppLoading } from './src/components/AppLoading';
+import { UpdatePrompt } from './src/components/UpdatePrompt';
 import { AppLockScreen } from './src/screens/AppLockScreen';
 import { OnboardingScreen } from './src/screens/OnboardingScreen';
 
@@ -28,6 +30,7 @@ function AppContent() {
   const { isDark } = useTheme();
   const [unlocked, setUnlocked] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  const [updateVisible, setUpdateVisible] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_KEY).then((v) => {
@@ -35,9 +38,28 @@ function AppContent() {
     });
   }, []);
 
+  // Check for app updates after hydration
+  useEffect(() => {
+    if (!isHydrated) { return; }
+    checkForUpdate().then((status) => {
+      if (status.available) {
+        setUpdateVisible(true);
+      }
+    });
+  }, [isHydrated]);
+
   const handleOnboardingComplete = useCallback(() => {
     AsyncStorage.setItem(ONBOARDING_KEY, 'true');
     setOnboardingDone(true);
+  }, []);
+
+  const handleUpdate = useCallback(() => {
+    setUpdateVisible(false);
+    startUpdate('flexible').catch(() => {});
+  }, []);
+
+  const handleDismissUpdate = useCallback(() => {
+    setUpdateVisible(false);
   }, []);
 
   const needsLock = settings.appLockEnabled && settings.appLockPin && !unlocked;
@@ -65,6 +87,11 @@ function AppContent() {
           <AppNavigator />
         </View>
       )}
+      <UpdatePrompt
+        visible={updateVisible}
+        onUpdate={handleUpdate}
+        onDismiss={handleDismissUpdate}
+      />
     </>
   );
 }

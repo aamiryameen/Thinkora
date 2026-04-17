@@ -16,6 +16,7 @@ import {
   hideQuickCaptureNotification,
   isQuickCaptureEnabled,
 } from '../services/quickCaptureService';
+import { checkForUpdate, startUpdate } from '../services/updateService';
 import { PinSetupScreen } from './AppLockScreen';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -35,10 +36,34 @@ export function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [quickCapture, setQuickCapture] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   useEffect(() => {
     isQuickCaptureEnabled().then(setQuickCapture);
   }, []);
+
+  const handleCheckForUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const status = await checkForUpdate();
+      if (status.available) {
+        Alert.alert(
+          'Update Available',
+          'A new version is available. Would you like to update now?',
+          [
+            { text: 'Later', style: 'cancel' },
+            { text: 'Update', onPress: () => startUpdate('flexible').catch(() => {}) },
+          ],
+        );
+      } else {
+        Alert.alert('Up to Date', 'You are using the latest version.');
+      }
+    } catch {
+      Alert.alert('Error', 'Could not check for updates. Please try again later.');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   const handleExportTasks = () => exportTasksToHtml(tasks, 'My Tasks');
   const handleExportNotes = () => exportNotesToHtml(notes, 'My Notes');
@@ -225,6 +250,13 @@ export function SettingsScreen() {
                 <Ionicons name="shield-outline" size={20} color="#6366F1" />
               </View>
               <Text style={styles.rowLabel}>Privacy Policy</Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.row} onPress={handleCheckForUpdate} disabled={checkingUpdate}>
+              <View style={[styles.rowIconWrap, { backgroundColor: '#10B98120' }]}>
+                <Ionicons name="cloud-download-outline" size={20} color="#10B981" />
+              </View>
+              <Text style={styles.rowLabel}>{checkingUpdate ? 'Checking...' : 'Check for Updates'}</Text>
               <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
             </TouchableOpacity>
             <View style={[styles.row, styles.rowLast]}>
