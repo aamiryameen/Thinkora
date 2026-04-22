@@ -205,7 +205,8 @@ export function NoteEditorScreen() {
         });
         if (r) updateNote(n.id, { reminderId: r.id });
       }
-      navigation.goBack();
+      // Do NOT goBack here — autosave would kick the user out mid-typing.
+      // User will navigate back manually via the Save button.
       return;
     }
     if (!note) return;
