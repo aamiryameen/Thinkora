@@ -5,7 +5,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { storage } from '../services/storage';
 import { syncWidgetData } from '../services/widgetService';
-import { scheduleDailyDigest } from '../services/smartNotificationService';
+import { scheduleDailyDigest, scheduleWeeklyReview, syncHabitReminders } from '../services/smartNotificationService';
 import { DEFAULT_POMODORO } from '../core/constants';
 import { categoryColors } from '../core/theme';
 import { generateId } from '../utils/id';
@@ -165,6 +165,8 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
   // Side-effects — immediate
   useEffect(() => { if (loaded) syncWidgetData([], habits); }, [loaded, habits]);
   useEffect(() => { if (loaded) scheduleDailyDigest(tasks, habits); }, [loaded, tasks, habits]);
+  useEffect(() => { if (loaded) scheduleWeeklyReview(tasks, habits).catch(() => {}); }, [loaded, tasks, habits]);
+  useEffect(() => { if (loaded) syncHabitReminders(habits).catch(() => {}); }, [loaded, habits]);
 
   // ─── Habits ─────────────────────────────────────
   const addHabit = useCallback((h: Omit<Habit, 'id' | 'createdAt' | 'completedDates' | 'archived'>): Habit => {

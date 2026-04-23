@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   Platform,
   ActivityIndicator,
+  Pressable,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { Icon } from './Icons';
 import { EDITOR_CONTENT_DEBOUNCE_MS } from '../core/constants';
 import { useTheme } from '../context/ThemeContext';
@@ -35,6 +37,11 @@ interface RichNoteEditorProps {
   editable?: boolean;
   /** When this changes, editor content is synced from `content` (e.g. after undo/redo). */
   contentRestoreKey?: number;
+  /** Voice input mic buttons — when provided, shown next to title and above content. */
+  titleVoiceActive?: boolean;
+  onTitleVoicePress?: () => void;
+  contentVoiceActive?: boolean;
+  onContentVoicePress?: () => void;
 }
 
 export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorProps>(function RichNoteEditor({
@@ -45,6 +52,10 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
   placeholder = 'Start writing...',
   editable = true,
   contentRestoreKey = 0,
+  titleVoiceActive = false,
+  onTitleVoicePress,
+  contentVoiceActive = false,
+  onContentVoicePress,
 }: RichNoteEditorProps, ref) {
   const { theme } = useTheme();
   const richRef = useRef<{
@@ -117,24 +128,38 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
       StyleSheet.create({
         container: { flex: 1 },
         fallback: { flex: 1, padding: theme.spacing.md },
+        titleRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          paddingRight: theme.spacing.sm,
+        },
         titleInput: {
           ...theme.typography.title,
+          flex: 1,
           paddingVertical: theme.spacing.sm,
           paddingHorizontal: theme.spacing.xs,
           marginBottom: theme.spacing.xs,
           color: theme.colors.text,
         },
+        toolbarRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingRight: theme.spacing.sm,
+        },
         toolbar: {
           backgroundColor: theme.colors.background,
           minHeight: 40,
+          flex: 1,
         },
         editor: {
           flex: 1,
-          minHeight: 200,
+          minHeight: 360,
           paddingHorizontal: theme.spacing.sm,
         },
         fallbackBody: {
           flex: 1,
+          minHeight: 360,
           ...theme.typography.body,
           color: theme.colors.text,
           paddingVertical: theme.spacing.sm,
@@ -147,21 +172,64 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
           top: 120,
           alignItems: 'center',
         },
+        micBtn: {
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        micBtnSmall: {
+          width: 30,
+          height: 30,
+          borderRadius: 15,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
       }),
     [theme]
   );
 
+  const renderTitleMic = () => {
+    if (!onTitleVoicePress) return null;
+    return (
+      <Pressable
+        onPress={onTitleVoicePress}
+        hitSlop={16}
+        style={[styles.micBtn, { backgroundColor: titleVoiceActive ? theme.colors.error : theme.colors.primary }]}
+      >
+        <Ionicons name={titleVoiceActive ? 'stop' : 'mic'} size={18} color="#FFF" />
+      </Pressable>
+    );
+  };
+
+  const renderContentMic = () => {
+    if (!onContentVoicePress) return null;
+    return (
+      <Pressable
+        onPress={onContentVoicePress}
+        hitSlop={16}
+        style={[styles.micBtnSmall, { backgroundColor: contentVoiceActive ? theme.colors.error : theme.colors.primary }]}
+      >
+        <Ionicons name={contentVoiceActive ? 'stop' : 'mic'} size={15} color="#FFF" />
+      </Pressable>
+    );
+  };
+
   if (Platform.OS !== 'android' || !RichEditor || !RichToolbar) {
     return (
       <View style={styles.fallback}>
-        <TextInput
-          style={styles.titleInput}
-          value={title}
-          onChangeText={onTitleChange}
-          placeholder="Title"
-          editable={editable}
-          placeholderTextColor={theme.colors.textDisabled}
-        />
+        <View style={styles.titleRow}>
+          <TextInput
+            style={styles.titleInput}
+            value={title}
+            onChangeText={onTitleChange}
+            placeholder="Title"
+            editable={editable}
+            placeholderTextColor={theme.colors.textDisabled}
+          />
+          {renderTitleMic()}
+        </View>
         <TextInput
           style={styles.fallbackBody}
           value={content ? stripHtml(content) : ''}
@@ -177,27 +245,33 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
 
   return (
     <View style={styles.container}>
-      <TextInput
-        style={styles.titleInput}
-        value={title}
-        onChangeText={onTitleChange}
-        placeholder="Title"
-        editable={editable}
-        placeholderTextColor={theme.colors.textDisabled}
-      />
-      <RichToolbar
-        getEditor={() => richRef.current}
-        actions={[
-          actions.setBold,
-          actions.setItalic,
-          actions.setUnderline,
-          actions.insertBulletsList,
-          actions.insertOrderedList,
-        ]}
-        style={styles.toolbar}
-        iconTint={theme.colors.icon}
-        selectedIconTint={theme.colors.primary}
-      />
+      <View style={styles.titleRow}>
+        <TextInput
+          style={styles.titleInput}
+          value={title}
+          onChangeText={onTitleChange}
+          placeholder="Title"
+          editable={editable}
+          placeholderTextColor={theme.colors.textDisabled}
+        />
+        {renderTitleMic()}
+      </View>
+      <View style={styles.toolbarRow}>
+        <RichToolbar
+          getEditor={() => richRef.current}
+          actions={[
+            actions.setBold,
+            actions.setItalic,
+            actions.setUnderline,
+            actions.insertBulletsList,
+            actions.insertOrderedList,
+          ]}
+          style={styles.toolbar}
+          iconTint={theme.colors.icon}
+          selectedIconTint={theme.colors.primary}
+        />
+        {renderContentMic()}
+      </View>
       <RichEditor
         ref={(r: any) => {
           if (r) richRef.current = r;
@@ -215,7 +289,7 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         style={styles.editor}
         editorStyle={{
           backgroundColor: 'transparent',
-          minHeight: 200,
+          minHeight: 360,
           color: theme.colors.text,
           placeholderColor: theme.colors.textMuted,
           caretColor: theme.colors.primary,

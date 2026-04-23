@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Vibration } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Vibration, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../context/ThemeContext';
 import { useApp } from '../context/AppContext';
 import { useFeatures } from '../context/FeaturesContext';
+import {
+  AMBIENT_SOUNDS,
+  playAmbientSound,
+  stopAmbientSound,
+} from '../services/soundService';
 
 type TimerState = 'idle' | 'running' | 'paused';
 type SessionType = 'work' | 'break';
@@ -22,7 +27,35 @@ export function PomodoroScreen() {
   const [timerState, setTimerState] = useState<TimerState>('idle');
   const [secondsLeft, setSecondsLeft] = useState(pom.workMinutes * 60);
   const [sessionCount, setSessionCount] = useState(0);
+  const [selectedAmbient, setSelectedAmbient] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Toggle ambient sound
+  const toggleAmbient = useCallback((soundId: string) => {
+    if (selectedAmbient === soundId) {
+      stopAmbientSound();
+      setSelectedAmbient(null);
+    } else {
+      playAmbientSound(soundId, 0.5);
+      setSelectedAmbient(soundId);
+    }
+  }, [selectedAmbient]);
+
+  // Stop ambient on screen unmount
+  useEffect(() => {
+    return () => {
+      stopAmbientSound();
+    };
+  }, []);
+
+  // Auto-pause ambient when timer pauses (optional — remove if you want it always on)
+  useEffect(() => {
+    if (timerState === 'paused' && selectedAmbient) {
+      stopAmbientSound();
+    } else if (timerState === 'running' && selectedAmbient) {
+      playAmbientSound(selectedAmbient, 0.5);
+    }
+  }, [timerState]);
 
   const totalSeconds = sessionType === 'work' ? pom.workMinutes * 60 : (sessionCount > 0 && sessionCount % pom.sessionsBeforeLongBreak === 0 ? pom.longBreakMinutes : pom.shortBreakMinutes) * 60;
 
@@ -139,6 +172,55 @@ export function PomodoroScreen() {
             <Text style={styles.statLabel}>All Time</Text>
           </View>
         </View>
+      </View>
+
+      {/* Ambient Sounds Panel */}
+      <View style={{
+        paddingVertical: theme.spacing.md,
+        paddingHorizontal: theme.spacing.lg,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: theme.colors.border,
+        backgroundColor: theme.colors.surface,
+        paddingBottom: insets.bottom + theme.spacing.sm,
+      }}>
+        <Text style={{
+          fontSize: 12, fontWeight: '700', color: theme.colors.textMuted,
+          letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 10,
+        }}>
+          Ambient Sounds
+        </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+          {AMBIENT_SOUNDS.map((sound) => {
+            const isActive = selectedAmbient === sound.id;
+            return (
+              <TouchableOpacity
+                key={sound.id}
+                onPress={() => toggleAmbient(sound.id)}
+                activeOpacity={0.7}
+                style={{
+                  alignItems: 'center', justifyContent: 'center',
+                  paddingVertical: 10, paddingHorizontal: 14,
+                  borderRadius: 14, minWidth: 72,
+                  backgroundColor: isActive ? sound.color : theme.colors.cardBg,
+                  borderWidth: 2,
+                  borderColor: isActive ? sound.color : 'transparent',
+                }}
+              >
+                <Ionicons
+                  name={sound.icon as any}
+                  size={22}
+                  color={isActive ? '#FFF' : sound.color}
+                />
+                <Text style={{
+                  fontSize: 11, fontWeight: '700', marginTop: 4,
+                  color: isActive ? '#FFF' : theme.colors.text,
+                }}>
+                  {sound.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
     </View>
   );

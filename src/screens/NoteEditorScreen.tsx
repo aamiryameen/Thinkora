@@ -10,6 +10,9 @@ import {
   Modal,
   Pressable,
   Share,
+  NativeModules,
+  DeviceEventEmitter,
+  PermissionsAndroid,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -18,11 +21,9 @@ import { RichNoteEditor, RichNoteEditorHandle } from '../components/RichNoteEdit
 import { AttachmentList } from '../components/AttachmentList';
 import { SketchCanvasModal } from '../components/SketchCanvas';
 import { Icon } from '../components/Icons';
-import { VoiceInputButton } from '../components/VoiceInputButton';
 import { useApp } from '../context/AppContext';
 import { suggestTasksFromNote, autoCategorizeNote } from '../services/aiService';
 import {
-  AUTO_SAVE_INTERVAL_MS,
   UNDO_HISTORY_MAX,
   DEFAULT_NOTE_TITLE,
   REMINDER_BODY_MAX_LENGTH,
@@ -41,6 +42,13 @@ import {
 } from '../services/attachmentService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ReminderTunePicker } from '../components/ReminderTunePicker';
+import {
+  REMINDER_TUNES,
+  getTuneIdForItem,
+  setTuneForItem,
+  clearTuneForItem,
+} from '../services/soundService';
 
 type NoteEditorRouteProp = RouteProp<RootStackParamList, 'NoteEditor'>;
 type NoteEditorNavProp = NativeStackNavigationProp<RootStackParamList, 'NoteEditor'>;
@@ -80,6 +88,73 @@ export function NoteEditorScreen() {
   const [reminderId, setReminderId] = useState<string | null>(note?.reminderId ?? null);
   const [pendingReminderDate, setPendingReminderDate] = useState<number | null>(null);
   const [pendingReminderRepeat, setPendingReminderRepeat] = useState<'none' | 'daily' | 'weekly'>('none');
+  const [tuneId, setTuneIdState] = useState<string | null>(null);
+  const [showTunePicker, setShowTunePicker] = useState(false);
+
+  // Load per-reminder tune override
+  useEffect(() => {
+    if (reminderId && reminderId !== 'pending') {
+      getTuneIdForItem(reminderId).then(setTuneIdState);
+    }
+  }, [reminderId]);
+
+  const handleTuneSelect = useCallback(async (newTuneId: string | null) => {
+    setTuneIdState(newTuneId);
+    if (reminderId && reminderId !== 'pending') {
+      if (newTuneId) await setTuneForItem(reminderId, newTuneId);
+      else await clearTuneForItem(reminderId);
+    }
+    setShowTunePicker(false);
+  }, [reminderId]);
+
+  const tuneLabel = useMemo(() => {
+    if (!tuneId) return 'Default';
+    const tune = REMINDER_TUNES.find(t => t.id === tuneId);
+    return tune?.name ?? 'Default';
+  }, [tuneId]);
+
+  // Voice input (mirrors TaskEditorScreen)
+  const [isListening, setIsListening] = useState(false);
+  const [voiceTarget, setVoiceTarget] = useState<'title' | 'content' | null>(null);
+  const voiceTargetRef = useRef<'title' | 'content' | null>(null);
+
+  const startVoice = useCallback(async (target: 'title' | 'content') => {
+    try {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          { title: 'Microphone Permission', message: 'App needs access to your microphone for voice input.', buttonPositive: 'OK' },
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          Alert.alert('Permission Denied', 'Microphone permission is required for voice input.');
+          return;
+        }
+      }
+      const { SpeechModule } = NativeModules;
+      if (!SpeechModule) {
+        Alert.alert('Not Available', 'Speech recognition is not available on this device.');
+        return;
+      }
+      voiceTargetRef.current = target;
+      setVoiceTarget(target);
+      setIsListening(true);
+      SpeechModule.startListening('en-US');
+    } catch (e: any) {
+      Alert.alert('Voice Error', e?.message ?? 'Failed to start voice input');
+      setIsListening(false);
+      setVoiceTarget(null);
+    }
+  }, []);
+
+  const stopVoice = useCallback(() => {
+    try {
+      const { SpeechModule } = NativeModules;
+      SpeechModule?.stopListening();
+    } catch (_) {}
+    voiceTargetRef.current = null;
+    setIsListening(false);
+    setVoiceTarget(null);
+  }, []);
   const initialEntry: HistoryEntry = {
     title: note?.title ?? '',
     content: note?.content ?? '',
@@ -101,7 +176,6 @@ export function NoteEditorScreen() {
   /** On Android we use date then time (two steps) to avoid crash when dismissing mode="datetime". */
   const [pickerStep, setPickerStep] = useState<'date' | 'time'>('date');
   const [pendingDateForTime, setPendingDateForTime] = useState<Date | null>(null);
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isNew = !noteId;
 
   useEffect(() => {
@@ -178,6 +252,38 @@ export function NoteEditorScreen() {
     pushHistory(newTitle, content);
   }, [content, pushHistory]);
 
+  // Listen for speech events — mounted once, reads voiceTargetRef to avoid stale closures
+  useEffect(() => {
+    const { SpeechModule } = NativeModules;
+    if (!SpeechModule) return;
+    const subs = [
+      DeviceEventEmitter.addListener('onSpeechResults', (e: any) => {
+        const text = e?.value?.[0];
+        if (text) {
+          if (voiceTargetRef.current === 'title') {
+            setTitle((prev: string) => {
+              const next = prev ? `${prev} ${text}` : text;
+              pushHistory(next, content);
+              return next;
+            });
+          } else if (voiceTargetRef.current === 'content') {
+            richEditorRef.current?.insertText(text + ' ');
+          }
+        }
+        voiceTargetRef.current = null;
+        setIsListening(false);
+        setVoiceTarget(null);
+      }),
+      DeviceEventEmitter.addListener('onSpeechError', (e: any) => {
+        Alert.alert('Voice Error', e?.error ?? 'Recognition failed');
+        voiceTargetRef.current = null;
+        setIsListening(false);
+        setVoiceTarget(null);
+      }),
+    ];
+    return () => subs.forEach(s => s.remove());
+  }, [content, pushHistory]);
+
   const persistNote = useCallback(async () => {
     if (isNew) {
       if (!title.trim() && !plainText.trim()) return;
@@ -205,8 +311,6 @@ export function NoteEditorScreen() {
         });
         if (r) updateNote(n.id, { reminderId: r.id });
       }
-      // Do NOT goBack here — autosave would kick the user out mid-typing.
-      // User will navigate back manually via the Save button.
       return;
     }
     if (!note) return;
@@ -239,17 +343,42 @@ export function NoteEditorScreen() {
     noteColor,
   ]);
 
-  useEffect(() => {
-    autoSaveTimer.current = setInterval(persistNote, AUTO_SAVE_INTERVAL_MS);
-    return () => {
-      if (autoSaveTimer.current) clearInterval(autoSaveTimer.current);
-    };
-  }, [persistNote]);
-
   const handleBack = useCallback(() => {
+    // Existing notes save on back; new notes are intercepted by the
+    // beforeRemove listener below which prompts to discard.
+    if (!isNew) persistNote();
+    navigation.goBack();
+  }, [isNew, persistNote, navigation]);
+
+  const allowLeaveRef = useRef(false);
+  const handleSave = useCallback(() => {
     persistNote();
+    allowLeaveRef.current = true;
     navigation.goBack();
   }, [persistNote, navigation]);
+
+  // Intercept hardware back / gesture back so new-note drafts aren't silently persisted.
+  useEffect(() => {
+    const sub = navigation.addListener('beforeRemove', (e) => {
+      if (allowLeaveRef.current) return;
+      if (!isNew) return;
+      const hasContent = title.trim() || plainText.trim();
+      if (!hasContent) return;
+      e.preventDefault();
+      Alert.alert('Discard note?', 'Your changes will not be saved.', [
+        { text: 'Keep editing', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            allowLeaveRef.current = true;
+            navigation.dispatch(e.data.action);
+          },
+        },
+      ]);
+    });
+    return sub;
+  }, [navigation, isNew, title, plainText]);
 
   const addAttachment = useCallback(
     (att: NoteAttachment) => setAttachments((prev) => [...prev, att]),
@@ -813,7 +942,7 @@ export function NoteEditorScreen() {
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity style={styles.saveBtn} onPress={handleBack} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
             <Text style={styles.saveBtnText}>Save</Text>
           </TouchableOpacity>
         </View>
@@ -846,6 +975,10 @@ export function NoteEditorScreen() {
             onTitleChange={handleTitleChange}
             onContentChange={handleContentChange}
             contentRestoreKey={contentRestoreKey}
+            titleVoiceActive={isListening && voiceTarget === 'title'}
+            onTitleVoicePress={() => (isListening && voiceTarget === 'title' ? stopVoice() : startVoice('title'))}
+            contentVoiceActive={isListening && voiceTarget === 'content'}
+            onContentVoicePress={() => (isListening && voiceTarget === 'content' ? stopVoice() : startVoice('content'))}
           />
         </View>
 
@@ -940,24 +1073,35 @@ export function NoteEditorScreen() {
                   </TouchableOpacity>
                 </View>
                 {reminderId && reminderId !== 'pending' && (
-                  <View style={[styles.quickRow, { marginTop: theme.spacing.sm }]}>
-                    <Text style={[styles.repeatLabel, { marginRight: 4 }]}>Snooze:</Text>
-                    {[
-                      { label: '10m', minutes: 10 },
-                      { label: '30m', minutes: 30 },
-                      { label: '1h', minutes: 60 },
-                      { label: '3h', minutes: 180 },
-                    ].map((s) => (
-                      <TouchableOpacity
-                        key={s.label}
-                        style={styles.quickChip}
-                        onPress={() => snoozeReminder(reminderId, s.minutes)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.quickChipText}>{s.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  <>
+                    <View style={[styles.quickRow, { marginTop: theme.spacing.sm }]}>
+                      <Text style={[styles.repeatLabel, { marginRight: 4 }]}>Snooze:</Text>
+                      {[
+                        { label: '10m', minutes: 10 },
+                        { label: '30m', minutes: 30 },
+                        { label: '1h', minutes: 60 },
+                        { label: '3h', minutes: 180 },
+                      ].map((s) => (
+                        <TouchableOpacity
+                          key={s.label}
+                          style={styles.quickChip}
+                          onPress={() => snoozeReminder(reminderId, s.minutes)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.quickChipText}>{s.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.quickRow, { marginTop: theme.spacing.sm, alignItems: 'center' }]}
+                      onPress={() => setShowTunePicker(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="musical-notes-outline" size={16} color={theme.colors.primary} />
+                      <Text style={[styles.reminderBtnText, { marginLeft: 6 }]}>Alarm sound: {tuneLabel}</Text>
+                      <Ionicons name="chevron-forward" size={14} color={theme.colors.textMuted} style={{ marginLeft: 'auto' }} />
+                    </TouchableOpacity>
+                  </>
                 )}
               </View>
             ) : (
@@ -1114,6 +1258,14 @@ export function NoteEditorScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Reminder Tune Picker */}
+      <ReminderTunePicker
+        visible={showTunePicker}
+        selectedTuneId={tuneId}
+        onSelect={handleTuneSelect}
+        onClose={() => setShowTunePicker(false)}
+      />
 
     </View>
   );

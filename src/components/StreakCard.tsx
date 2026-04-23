@@ -225,8 +225,10 @@ export function StreakCard({ streak }: Props) {
       {nextMilestone && (
         <View style={styles.progressWrap}>
           <View style={styles.progressLabel}>
-            <Text style={styles.progressText}>Next milestone</Text>
-            <Text style={styles.progressMilestone}>{nextMilestone} days</Text>
+            <Text style={styles.progressText}>
+              {nextMilestone - streak.currentStreak} day{nextMilestone - streak.currentStreak !== 1 ? 's' : ''} to next milestone
+            </Text>
+            <Text style={styles.progressMilestone}>{nextMilestone} 🏆</Text>
           </View>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${progressToMilestone * 100}%` }]} />

@@ -22,18 +22,33 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type StackNav = NativeStackNavigationProp<RootStackParamList>;
 
+// Soft pastel palette used when a note has no explicit color.
+const NOTE_CARD_PALETTE = [
+  { bg: '#FEF3C7', accent: '#F59E0B' }, // amber
+  { bg: '#DBEAFE', accent: '#3B82F6' }, // blue
+  { bg: '#D1FAE5', accent: '#10B981' }, // green
+  { bg: '#FCE7F3', accent: '#EC4899' }, // pink
+  { bg: '#EDE9FE', accent: '#8B5CF6' }, // purple
+  { bg: '#FFE4E6', accent: '#F43F5E' }, // rose
+  { bg: '#CFFAFE', accent: '#06B6D4' }, // cyan
+  { bg: '#FEE2E2', accent: '#EF4444' }, // red
+];
+
 export function NoteListScreen() {
   const navigation = useNavigation<StackNav>();
   const stackNav = navigation.getParent() as StackNav | undefined;
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const {
+    notes,
     filteredNotes,
     filter,
     setFilter,
     setSort,
     toggleFavorite,
     togglePin,
+    deleteNote,
+    deleteAllNotes,
     getFolder,
     getTag,
   } = useApp();
@@ -113,7 +128,7 @@ export function NoteListScreen() {
           borderRadius: theme.borderRadius.md,
         },
         sortOptionText: { ...theme.typography.body, color: theme.colors.text },
-        filterScroll: { maxHeight: 52, marginBottom: theme.spacing.sm },
+        filterScroll: { flexGrow: 0, flexShrink: 0 },
         filterRow: {
           paddingHorizontal: theme.spacing.lg,
           paddingVertical: theme.spacing.xs,
@@ -124,14 +139,15 @@ export function NoteListScreen() {
         filterChip: {
           flexDirection: 'row',
           alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: 36,
           paddingVertical: 8,
           paddingHorizontal: theme.spacing.lg,
           borderRadius: theme.borderRadius.full,
-          backgroundColor: theme.colors.surface,
-          gap: theme.spacing.xs,
-          borderWidth: 2,
-          borderColor: 'transparent',
-          ...theme.shadows.input,
+          backgroundColor: theme.colors.cardBg,
+          gap: 6,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
         },
         filterChipOn: {
           backgroundColor: theme.colors.primaryLight,
@@ -139,7 +155,7 @@ export function NoteListScreen() {
         },
         filterChipText: { ...theme.typography.caption, color: theme.colors.textSecondary, fontWeight: '500' },
         filterChipTextOn: { color: theme.colors.primaryDark, fontWeight: '600' },
-        list: { padding: theme.spacing.lg, paddingBottom: 100 },
+        list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: 100 },
         noteCard: {
           backgroundColor: theme.colors.cardBg,
           borderRadius: theme.borderRadius.lg,
@@ -149,7 +165,7 @@ export function NoteListScreen() {
           borderLeftColor: 'transparent',
           ...theme.shadows.card,
         },
-        noteCardPinned: { borderLeftColor: theme.colors.primary },
+        noteCardPinned: { borderLeftColor: theme.colors.primary, borderLeftWidth: 5 },
         noteHeader: {
           flexDirection: 'row',
           justifyContent: 'space-between',
@@ -222,7 +238,8 @@ export function NoteListScreen() {
         fab: {
           position: 'absolute',
           right: theme.spacing.xl,
-          bottom: theme.spacing.xxl + 24,
+          // Above the AdBanner (~60dp) + safe margin
+          bottom: theme.spacing.xxl + 24 + 60,
           width: 58,
           height: 58,
           borderRadius: 29,
@@ -230,6 +247,7 @@ export function NoteListScreen() {
           alignItems: 'center',
           justifyContent: 'center',
           ...theme.shadows.fab,
+          zIndex: 10,
         },
       }),
     [theme, insets.top]
@@ -246,55 +264,86 @@ export function NoteListScreen() {
     stackNav?.navigate('NoteEditor', {});
   }, [stackNav]);
 
+  const handleDeleteAll = useCallback(() => {
+    if (notes.length === 0) return;
+    Alert.alert(
+      'Delete all notes?',
+      `This will permanently delete all ${notes.length} note${notes.length === 1 ? '' : 's'}. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete all', style: 'destructive', onPress: () => deleteAllNotes() },
+      ],
+    );
+  }, [notes.length, deleteAllNotes]);
+
   const renderNote = useCallback(
-    ({ item }: { item: Note }) => {
+    ({ item, index }: { item: Note; index: number }) => {
       const folder = item.folderId ? getFolder(item.folderId) : null;
       const tagNames = item.tagIds.map((tid) => getTag(tid)?.name).filter(Boolean);
-      const cardBg = item.color || theme.colors.cardBg;
+      const palette = NOTE_CARD_PALETTE[index % NOTE_CARD_PALETTE.length];
+      const cardBg = item.color || palette.bg;
+      const accent = item.color ? '#1a1a2e' : palette.accent;
       return (
         <TouchableOpacity
-          style={[styles.noteCard, item.isPinned && styles.noteCardPinned, item.color ? { backgroundColor: item.color } : null]}
+          style={[
+            styles.noteCard,
+            { backgroundColor: cardBg, borderLeftColor: accent, borderLeftWidth: 4 },
+            item.isPinned && styles.noteCardPinned,
+          ]}
           onPress={() => openNote(item)}
           onLongPress={() =>
-            Alert.alert('Note', undefined, [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: item.isFavorite ? 'Unfavorite' : 'Favorite',
-                onPress: () => toggleFavorite(item.id),
-              },
-              {
-                text: item.isPinned ? 'Unpin' : 'Pin',
-                onPress: () => togglePin(item.id),
-              },
-            ])
+            Alert.alert(
+              item.title || 'Untitled',
+              'Choose an action',
+              [
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: () =>
+                    Alert.alert('Delete note?', 'This cannot be undone.', [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Delete', style: 'destructive', onPress: () => deleteNote(item.id) },
+                    ]),
+                },
+                {
+                  text: item.isFavorite ? 'Unfavorite' : 'Favorite',
+                  onPress: () => toggleFavorite(item.id),
+                },
+                {
+                  text: item.isPinned ? 'Unpin' : 'Pin',
+                  onPress: () => togglePin(item.id),
+                },
+              ],
+              { cancelable: true },
+            )
           }
           activeOpacity={0.8}
         >
           <View style={styles.noteHeader}>
-            <Text style={[styles.noteTitle, item.color ? { color: '#1a1a2e' } : null]} numberOfLines={1}>
+            <Text style={[styles.noteTitle, { color: '#1a1a2e' }]} numberOfLines={1}>
               {item.title || 'Untitled'}
             </Text>
             <View style={styles.noteBadges}>
-              {item.isPinned && <Icon name="pin" size={14} />}
-              {item.isFavorite && <Icon name="star" size={14} />}
+              {item.isPinned && <Icon name="pin" size={14} color={accent} />}
+              {item.isFavorite && <Icon name="star" size={14} color={accent} />}
             </View>
           </View>
-          <Text style={[styles.notePreview, item.color ? { color: '#444' } : null]} numberOfLines={2}>
+          <Text style={[styles.notePreview, { color: '#475569' }]} numberOfLines={2}>
             {item.plainText || 'No content'}
           </Text>
           <View style={styles.noteMeta}>
-            {folder && <Text style={[styles.metaText, item.color ? { color: '#666' } : null]}>{folder.name}</Text>}
+            {folder && <Text style={[styles.metaText, { color: '#64748B' }]}>{folder.name}</Text>}
             {tagNames.length > 0 && (
-              <Text style={[styles.metaText, item.color ? { color: '#666' } : null]}>{tagNames.join(', ')}</Text>
+              <Text style={[styles.metaText, { color: '#64748B' }]}>{tagNames.join(', ')}</Text>
             )}
-            <Text style={[styles.metaDate, item.color ? { color: '#666' } : null]}>
+            <Text style={[styles.metaDate, { color: '#64748B' }]}>
               {new Date(item.updatedAt).toLocaleDateString()}
             </Text>
           </View>
         </TouchableOpacity>
       );
     },
-    [getFolder, getTag, openNote, styles, toggleFavorite, togglePin, theme]
+    [getFolder, getTag, openNote, styles, toggleFavorite, togglePin, deleteNote, theme]
   );
 
   const categoryLabels: Record<string, string> = {
@@ -322,13 +371,24 @@ export function NoteListScreen() {
               {filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={() => navigation.navigate('Search')}
-            style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
-            activeOpacity={0.7}
-          >
-            <Icon name="search" size={20} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {notes.length > 0 && (
+              <TouchableOpacity
+                onPress={handleDeleteAll}
+                style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
+                activeOpacity={0.7}
+              >
+                <Icon name="delete" size={20} color={theme.colors.error} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Search')}
+              style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
+              activeOpacity={0.7}
+            >
+              <Icon name="search" size={20} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
       <View style={styles.searchRow}>

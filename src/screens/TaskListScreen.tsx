@@ -23,17 +23,31 @@ import { showInterstitial } from '../services/ads';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+// Soft pastel palette for task cards.
+const TASK_CARD_PALETTE = [
+  { bg: '#E0F2FE', accent: '#0EA5E9' }, // sky
+  { bg: '#FEF9C3', accent: '#EAB308' }, // yellow
+  { bg: '#DCFCE7', accent: '#22C55E' }, // green
+  { bg: '#FCE7F3', accent: '#EC4899' }, // pink
+  { bg: '#E0E7FF', accent: '#6366F1' }, // indigo
+  { bg: '#FFEDD5', accent: '#F97316' }, // orange
+  { bg: '#F3E8FF', accent: '#A855F7' }, // violet
+  { bg: '#CCFBF1', accent: '#14B8A6' }, // teal
+];
+
 export function TaskListScreen() {
   const navigation = useNavigation<Nav>();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const {
+    tasks,
     filteredTasks,
     taskCategories,
     taskFilter,
     setTaskFilter,
     toggleTaskComplete,
     deleteTask,
+    deleteAllTasks,
     getTaskCategory,
   } = useApp();
 
@@ -63,9 +77,29 @@ export function TaskListScreen() {
     Alert.alert(task.title, undefined, [
       { text: 'Cancel', style: 'cancel' },
       { text: task.completed ? 'Mark Incomplete' : 'Mark Complete', onPress: () => handleToggleComplete(task) },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteTask(task.id) },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert('Delete task?', 'This cannot be undone.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => deleteTask(task.id) },
+          ]),
+      },
     ]);
   }, [handleToggleComplete, deleteTask]);
+
+  const handleDeleteAllTasks = useCallback(() => {
+    if (tasks.length === 0) return;
+    Alert.alert(
+      'Delete all tasks?',
+      `This will permanently delete all ${tasks.length} task${tasks.length === 1 ? '' : 's'}. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete all', style: 'destructive', onPress: () => deleteAllTasks() },
+      ],
+    );
+  }, [tasks.length, deleteAllTasks]);
 
   // Group tasks: Today, Upcoming, No Date, Completed
   const sections = useMemo(() => {
@@ -99,10 +133,17 @@ export function TaskListScreen() {
   }, [filteredTasks, taskFilter.showCompleted]);
 
   const flatData = useMemo(() => {
-    const items: ({ type: 'header'; title: string } | { type: 'task'; task: Task })[] = [];
+    const items: (
+      | { type: 'header'; title: string }
+      | { type: 'task'; task: Task; taskIndex: number }
+    )[] = [];
+    let taskIdx = 0;
     sections.forEach((s) => {
       items.push({ type: 'header', title: s.title });
-      s.data.forEach((task) => items.push({ type: 'task', task }));
+      s.data.forEach((task) => {
+        items.push({ type: 'task', task, taskIndex: taskIdx });
+        taskIdx += 1;
+      });
     });
     return items;
   }, [sections]);
@@ -200,7 +241,8 @@ export function TaskListScreen() {
     },
     fab: {
       position: 'absolute',
-      bottom: insets.bottom + theme.spacing.xl,
+      // Position above the ad banner (banner is ~60dp tall) + some margin
+      bottom: insets.bottom + theme.spacing.xl + 60,
       right: theme.spacing.lg,
       width: 56,
       height: 56,
@@ -209,6 +251,7 @@ export function TaskListScreen() {
       alignItems: 'center',
       justifyContent: 'center',
       ...theme.shadows.fab,
+      zIndex: 10,
     },
   }), [theme, insets]);
 
@@ -221,10 +264,12 @@ export function TaskListScreen() {
       );
     }
     const cat = item.task.categoryId ? getTaskCategory(item.task.categoryId) : undefined;
+    const palette = TASK_CARD_PALETTE[item.taskIndex % TASK_CARD_PALETTE.length];
     return (
       <TaskCard
         task={item.task}
         category={cat}
+        palette={palette}
         onToggle={() => handleToggleComplete(item.task)}
         onPress={() => navigation.navigate('TaskEditor', { taskId: item.task.id })}
         onLongPress={() => handleLongPress(item.task)}
@@ -244,6 +289,15 @@ export function TaskListScreen() {
             <Text style={styles.title}>My Tasks</Text>
             <Text style={styles.count}>{filteredTasks.filter((t) => !t.completed).length} pending tasks</Text>
           </View>
+          {tasks.length > 0 && (
+            <TouchableOpacity
+              onPress={handleDeleteAllTasks}
+              style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.inputBg, alignItems: 'center', justifyContent: 'center' }}
+              activeOpacity={0.7}
+            >
+              <Icon name="delete" size={20} color={theme.colors.error} />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.searchRow}>

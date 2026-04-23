@@ -10,9 +10,11 @@ interface Props {
   onToggle: () => void;
   onPress: () => void;
   onLongPress?: () => void;
+  /** Optional pastel palette entry — if provided, tints the card. */
+  palette?: { bg: string; accent: string };
 }
 
-export function TaskCard({ task, category, onToggle, onPress, onLongPress }: Props) {
+export function TaskCard({ task, category, onToggle, onPress, onLongPress, palette }: Props) {
   const { theme } = useTheme();
 
   const dueDateLabel = useMemo(() => {
@@ -33,16 +35,20 @@ export function TaskCard({ task, category, onToggle, onPress, onLongPress }: Pro
   const isOverdue = !!(task.dueDate && !task.completed && task.dueDate < Date.now());
   const completedSubs = task.subtasks.filter((s) => s.completed).length;
   const totalSubs = task.subtasks.length;
-  const catColor = category?.color ?? theme.colors.primary;
+  const catColor = category?.color ?? palette?.accent ?? theme.colors.primary;
+  const cardBg = palette?.bg ?? theme.colors.cardBg;
+  const onTint = !!palette;
 
   const styles = useMemo(() => StyleSheet.create({
     card: {
-      backgroundColor: theme.colors.cardBg,
+      backgroundColor: cardBg,
       borderRadius: theme.borderRadius.lg,
       padding: theme.spacing.lg,
       marginBottom: theme.spacing.sm,
       flexDirection: 'row',
       alignItems: 'flex-start',
+      borderLeftWidth: palette ? 4 : 0,
+      borderLeftColor: palette?.accent ?? 'transparent',
       ...theme.shadows.card,
     },
     checkbox: {
@@ -64,12 +70,12 @@ export function TaskCard({ task, category, onToggle, onPress, onLongPress }: Pro
     },
     title: {
       ...theme.typography.body,
-      color: theme.colors.text,
+      color: onTint ? '#1a1a2e' : theme.colors.text,
       fontWeight: '500',
     },
     titleDone: {
       textDecorationLine: 'line-through',
-      color: theme.colors.textMuted,
+      color: onTint ? '#64748B' : theme.colors.textMuted,
     },
     metaRow: {
       flexDirection: 'row',
@@ -84,7 +90,7 @@ export function TaskCard({ task, category, onToggle, onPress, onLongPress }: Pro
       paddingHorizontal: theme.spacing.sm,
       paddingVertical: 3,
       borderRadius: theme.borderRadius.full,
-      backgroundColor: theme.colors.inputBg,
+      backgroundColor: onTint ? 'rgba(255,255,255,0.6)' : theme.colors.inputBg,
       gap: 4,
     },
     chipOverdue: {
@@ -107,7 +113,7 @@ export function TaskCard({ task, category, onToggle, onPress, onLongPress }: Pro
       ...theme.typography.caption,
       color: catColor,
     },
-  }), [theme, catColor]);
+  }), [theme, catColor, cardBg, onTint, palette]);
 
   return (
     <TouchableOpacity

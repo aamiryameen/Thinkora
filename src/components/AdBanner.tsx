@@ -56,8 +56,13 @@ export function AdBanner({ size = BannerAdSize.ADAPTIVE_BANNER, style }: Props) 
 
 const styles = StyleSheet.create({
   container: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     width: '100%',
+    backgroundColor: 'transparent',
   },
   hidden: {
     height: 0,

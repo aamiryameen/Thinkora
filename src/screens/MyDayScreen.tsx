@@ -85,9 +85,11 @@ export function MyDayScreen() {
   // Greeting
   const greeting = useMemo(() => {
     const h = now.getHours();
-    if (h < 12) return 'Good Morning';
-    if (h < 17) return 'Good Afternoon';
-    return 'Good Evening';
+    if (h < 5) return 'Good Night';       // 12 AM - 4:59 AM
+    if (h < 12) return 'Good Morning';    // 5 AM - 11:59 AM
+    if (h < 17) return 'Good Afternoon';  // 12 PM - 4:59 PM
+    if (h < 21) return 'Good Evening';    // 5 PM - 8:59 PM
+    return 'Good Night';                   // 9 PM - 11:59 PM
   }, []);
 
   // Pomodoro

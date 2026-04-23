@@ -19,6 +19,7 @@ import { syncWidgetData } from '../services/widgetService';
 import {
   syncSmartDeadlineReminders,
   scheduleOverdueCheck,
+  scheduleEveningReflection,
 } from '../services/smartNotificationService';
 import {
   recordActivity,
@@ -61,6 +62,7 @@ interface AppContextValue extends AppState {
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => Note;
   updateNote: (id: string, patch: Partial<Note>) => void;
   deleteNote: (id: string) => void;
+  deleteAllNotes: () => void;
   getNote: (id: string) => Note | undefined;
   toggleFavorite: (id: string) => void;
   togglePin: (id: string) => void;
@@ -95,6 +97,7 @@ interface AppContextValue extends AppState {
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => Task;
   updateTask: (id: string, patch: Partial<Task>) => void;
   deleteTask: (id: string) => void;
+  deleteAllTasks: () => void;
   getTask: (id: string) => Task | undefined;
   toggleTaskComplete: (id: string) => void;
   toggleSubTaskComplete: (taskId: string, subTaskId: string) => void;
@@ -271,6 +274,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { if (loaded) syncWidgetData(tasks, []); }, [loaded, tasks]);
   useEffect(() => { if (loaded) syncSmartDeadlineReminders(tasks).catch(() => {}); }, [loaded, tasks]);
   useEffect(() => { if (loaded) scheduleOverdueCheck(tasks).catch(() => {}); }, [loaded, tasks]);
+  // Schedule 8 PM evening reflection notification (once on app load)
+  useEffect(() => { if (loaded) scheduleEveningReflection().catch(() => {}); }, [loaded]);
 
   // ─── Notes ──────────────────────────────────────────
   const addNote = useCallback((note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>): Note => {
@@ -288,6 +293,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deleteNote = useCallback((id: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
     setReminders((prev) => prev.filter((r) => r.noteId !== id));
+  }, []);
+
+  const deleteAllNotes = useCallback(() => {
+    setReminders((prev) => {
+      prev.forEach((r) => {
+        if (r.noteId && r.notifeeId) cancelReminderNotification(r.notifeeId).catch(() => {});
+      });
+      return prev.filter((r) => !r.noteId);
+    });
+    setNotes([]);
   }, []);
 
   const getNote = useCallback((id: string) => notes.find((n) => n.id === id), [notes]);
@@ -480,6 +495,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const deleteAllTasks = useCallback(() => {
+    setTasks((prev) => {
+      prev.forEach((t) => {
+        cancelReminderNotification(`task-reminder-${t.id}`).catch(() => {});
+      });
+      return [];
+    });
+  }, []);
+
   const getTask = useCallback((id: string) => tasks.find((t) => t.id === id), [tasks]);
 
   const toggleTaskComplete = useCallback((id: string) => {
@@ -623,12 +647,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     () => ({
       notes, folders, tags, reminders, filter, isHydrated: loaded,
       tasks, taskCategories, taskFilter, settings, streak,
-      addNote, updateNote, deleteNote, getNote, toggleFavorite, togglePin, setNoteCategory, setNoteColor,
+      addNote, updateNote, deleteNote, deleteAllNotes, getNote, toggleFavorite, togglePin, setNoteCategory, setNoteColor,
       addFolder, updateFolder, deleteFolder, getFolder,
       addTag, updateTag, deleteTag, getTag,
       addReminder, updateReminder, removeReminder, getReminder, snoozeReminder,
       setFilter, setSort, filteredNotes,
-      addTask, updateTask, deleteTask, getTask, toggleTaskComplete,
+      addTask, updateTask, deleteTask, deleteAllTasks, getTask, toggleTaskComplete,
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
@@ -637,12 +661,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [
       notes, folders, tags, reminders, filter, loaded,
       tasks, taskCategories, taskFilter, settings, streak,
-      addNote, updateNote, deleteNote, getNote, toggleFavorite, togglePin, setNoteCategory, setNoteColor,
+      addNote, updateNote, deleteNote, deleteAllNotes, getNote, toggleFavorite, togglePin, setNoteCategory, setNoteColor,
       addFolder, updateFolder, deleteFolder, getFolder,
       addTag, updateTag, deleteTag, getTag,
       addReminder, updateReminder, removeReminder, getReminder, snoozeReminder,
       setFilter, setSort, filteredNotes,
-      addTask, updateTask, deleteTask, getTask, toggleTaskComplete,
+      addTask, updateTask, deleteTask, deleteAllTasks, getTask, toggleTaskComplete,
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,

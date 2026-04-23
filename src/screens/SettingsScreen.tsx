@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,8 +8,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useApp } from '../context/AppContext';
 import { THEME_PRESETS } from '../core/theme';
 import { Icon } from '../components/Icons';
-// @ts-ignore — importing version from package.json
-import { version as appVersion } from '../../package.json';
+import DeviceInfo from 'react-native-device-info';
 import { exportTasksToHtml, exportNotesToHtml } from '../services/pdfExportService';
 import {
   showQuickCaptureNotification,
@@ -17,6 +16,14 @@ import {
   isQuickCaptureEnabled,
 } from '../services/quickCaptureService';
 import { checkForUpdate, startUpdate } from '../services/updateService';
+import {
+  REMINDER_TUNES,
+  getSelectedReminderTune,
+  setSelectedReminderTune,
+  previewReminderTune,
+  stopPreviewTune,
+  type ReminderTune,
+} from '../services/soundService';
 import { PinSetupScreen } from './AppLockScreen';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -37,10 +44,51 @@ export function SettingsScreen() {
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [quickCapture, setQuickCapture] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [selectedTune, setSelectedTuneState] = useState<ReminderTune>(REMINDER_TUNES[0]);
+  const [showTunePicker, setShowTunePicker] = useState(false);
+  const [playingTuneId, setPlayingTuneId] = useState<string | null>(null);
 
   useEffect(() => {
     isQuickCaptureEnabled().then(setQuickCapture);
+    getSelectedReminderTune().then(setSelectedTuneState);
   }, []);
+
+  // Stop preview when modal closes
+  useEffect(() => {
+    if (!showTunePicker) {
+      stopPreviewTune();
+      setPlayingTuneId(null);
+    }
+  }, [showTunePicker]);
+
+  const handleSelectTune = async (tune: ReminderTune) => {
+    await setSelectedReminderTune(tune.id);
+    setSelectedTuneState(tune);
+    // Play preview for newly-selected tune
+    if (playingTuneId === tune.id) {
+      stopPreviewTune();
+      setPlayingTuneId(null);
+    } else {
+      previewReminderTune(tune);
+      setPlayingTuneId(tune.id);
+      setTimeout(() => {
+        setPlayingTuneId((curr) => (curr === tune.id ? null : curr));
+      }, 30500);
+    }
+  };
+
+  const togglePreview = (tune: ReminderTune) => {
+    if (playingTuneId === tune.id) {
+      stopPreviewTune();
+      setPlayingTuneId(null);
+    } else {
+      previewReminderTune(tune);
+      setPlayingTuneId(tune.id);
+      setTimeout(() => {
+        setPlayingTuneId((curr) => (curr === tune.id ? null : curr));
+      }, 30500);
+    }
+  };
 
   const handleCheckForUpdate = async () => {
     setCheckingUpdate(true);
@@ -174,12 +222,20 @@ export function SettingsScreen() {
               <Text style={styles.rowLabel}>Notifications</Text>
               <Text style={styles.rowValue}>{settings.notificationsEnabled ? 'On' : 'Off'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.row, styles.rowLast]} onPress={handleToggleQuickCapture}>
+            <TouchableOpacity style={styles.row} onPress={handleToggleQuickCapture}>
               <View style={[styles.rowIconWrap, { backgroundColor: '#14B8A620' }]}>
                 <Ionicons name="flash-outline" size={20} color="#14B8A6" />
               </View>
               <Text style={styles.rowLabel}>Quick Capture</Text>
               <Text style={styles.rowValue}>{quickCapture ? 'On' : 'Off'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.row, styles.rowLast]} onPress={() => setShowTunePicker(true)}>
+              <View style={[styles.rowIconWrap, { backgroundColor: '#EC489920' }]}>
+                <Ionicons name="musical-notes-outline" size={20} color="#EC4899" />
+              </View>
+              <Text style={styles.rowLabel}>Reminder Sound</Text>
+              <Text style={styles.rowValue}>{selectedTune.name}</Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
             </TouchableOpacity>
           </View>
         </View>
@@ -264,11 +320,80 @@ export function SettingsScreen() {
                 <Ionicons name="information-circle-outline" size={20} color="#4A90D9" />
               </View>
               <Text style={styles.rowLabel}>Version</Text>
-              <Text style={styles.rowValue}>{appVersion}</Text>
+              <Text style={styles.rowValue}>{DeviceInfo.getVersion()}</Text>
             </View>
           </View>
         </View>
       </ScrollView>
+
+      {/* Reminder Tune Picker Modal */}
+      <Modal visible={showTunePicker} animationType="slide" onRequestClose={() => setShowTunePicker(false)}>
+        <View style={{ flex: 1, backgroundColor: theme.colors.background, paddingTop: insets.top }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12,
+            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border,
+            backgroundColor: theme.colors.surface,
+          }}>
+            <TouchableOpacity
+              onPress={() => setShowTunePicker(false)}
+              style={{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.inputBg, marginRight: 12 }}
+            >
+              <Ionicons name="close" size={20} color={theme.colors.text} />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.colors.text, flex: 1 }}>Reminder Sound</Text>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 20 }}>
+            <Text style={{ fontSize: 13, color: theme.colors.textMuted, marginBottom: 12, paddingHorizontal: 4 }}>
+              Tap any sound to preview and select.
+            </Text>
+            {REMINDER_TUNES.map((tune) => {
+              const isSelected = selectedTune.id === tune.id;
+              const isPlaying = playingTuneId === tune.id;
+              return (
+                <View
+                  key={tune.id}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    padding: 14, marginBottom: 8, borderRadius: 14,
+                    backgroundColor: isSelected ? theme.colors.primary + '15' : theme.colors.cardBg,
+                    borderWidth: 2,
+                    borderColor: isSelected ? theme.colors.primary : 'transparent',
+                  }}
+                >
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}
+                    onPress={() => handleSelectTune(tune)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{
+                      width: 40, height: 40, borderRadius: 10,
+                      alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: isSelected ? theme.colors.primary : theme.colors.inputBg,
+                    }}>
+                      <Ionicons name="musical-note" size={20} color={isSelected ? '#FFF' : theme.colors.textMuted} />
+                    </View>
+                    <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: theme.colors.text }}>{tune.name}</Text>
+                  </TouchableOpacity>
+                  {isSelected && !isPlaying ? (
+                    <Ionicons name="checkmark-circle" size={22} color={theme.colors.primary} />
+                  ) : (
+                    <TouchableOpacity
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      onPress={() => togglePreview(tune)}
+                    >
+                      <Ionicons
+                        name={isPlaying ? 'stop-circle' : 'play-circle-outline'}
+                        size={28}
+                        color={isPlaying ? theme.colors.error : theme.colors.textMuted}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }

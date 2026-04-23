@@ -1,5 +1,6 @@
 import { Platform, PermissionsAndroid } from 'react-native';
 import { NOTIFICATION_CHANNEL_ID } from '../core/constants';
+import { getSelectedReminderTune, getTuneForItem } from './soundService';
 import type { Reminder, ReminderRepeat } from '../types';
 
 let notifee: typeof import('@notifee/react-native') | null = null;
@@ -43,6 +44,33 @@ export async function createNotificationChannel(): Promise<void> {
     lights: true,
     lightColor: '#FF0000',
   });
+
+  // Create one channel per tune so users can pick sound per task/note.
+  // Android caches channel sound after first creation — can't change later.
+  const tunes = [
+    { id: 'chime',     resource: 'reminder_chime' },
+    { id: 'marimba',   resource: 'reminder_marimba' },
+    { id: 'ding',      resource: 'reminder_ding' },
+    { id: 'bell',      resource: 'reminder_bell' },
+    { id: 'pop',       resource: 'reminder_pop' },
+    { id: 'soft',      resource: 'reminder_soft' },
+    { id: 'xylophone', resource: 'reminder_xylophone' },
+    { id: 'digital',   resource: 'reminder_digital' },
+    { id: 'classic',   resource: 'reminder_classic' },
+    { id: 'twinkle',   resource: 'reminder_twinkle' },
+  ];
+  for (const t of tunes) {
+    await notifee.createChannel({
+      id: `thinkora_alarm_${t.id}`,
+      name: `Alarm — ${t.id}`,
+      importance: 4,
+      sound: t.resource,
+      vibration: true,
+      vibrationPattern: [500, 200, 500, 200, 500, 200],
+      lights: true,
+      lightColor: '#FF0000',
+    });
+  }
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
@@ -93,14 +121,18 @@ export async function scheduleTimeReminder(reminder: Reminder): Promise<string |
     alarmManager: true,
   };
   if (repeatFreq !== undefined) trigger.repeatFrequency = repeatFreq;
+  // Per-item tune override if set; otherwise global default tune
+  const tune = await getTuneForItem(reminder.id);
+  // Each tune has its own channel (sound baked into channel on Android)
+  const channelId = tune.id === 'alarm' ? ALARM_CHANNEL_ID : `thinkora_alarm_${tune.id}`;
   const id = await notifee.createTriggerNotification(
     {
       id: reminder.id,
       title: reminder.title || 'Thinkora Reminder',
       body: reminder.body,
       android: {
-        channelId: ALARM_CHANNEL_ID,
-        sound: 'alarm',
+        channelId,
+        sound: tune.resource,
         fullScreenAction: { id: 'default' },
         pressAction: { id: 'default' },
         importance: 4,

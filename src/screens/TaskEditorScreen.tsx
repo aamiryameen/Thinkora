@@ -21,10 +21,17 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Icon } from '../components/Icons';
 import { SubTaskList } from '../components/SubTaskList';
 import { CategoryPicker } from '../components/CategoryPicker';
+import { ReminderTunePicker } from '../components/ReminderTunePicker';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
 import type { TaskRepeat, TaskPriority } from '../types';
+import {
+  REMINDER_TUNES,
+  getTuneIdForItem,
+  setTuneForItem,
+  clearTuneForItem,
+} from '../services/soundService';
 
 type EditorRouteProp = RouteProp<RootStackParamList, 'TaskEditor'>;
 type Nav = NativeStackNavigationProp<RootStackParamList, 'TaskEditor'>;
@@ -72,6 +79,28 @@ export function TaskEditorScreen() {
   const [priority, setPriority] = useState<TaskPriority>(existing?.priority ?? 'none');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [subtasks, setSubtasks] = useState(existing?.subtasks ?? []);
+  const [tuneId, setTuneIdState] = useState<string | null>(null);
+  const [showTunePicker, setShowTunePicker] = useState(false);
+
+  // Load per-task tune override (only for existing tasks)
+  useEffect(() => {
+    if (existing?.id) {
+      getTuneIdForItem(`task-reminder-${existing.id}`).then(setTuneIdState);
+    }
+  }, [existing?.id]);
+
+  // Handle tune selection
+  const handleTuneSelect = useCallback(async (newTuneId: string | null) => {
+    setTuneIdState(newTuneId);
+    // We apply the tune based on the task id when save happens
+    setShowTunePicker(false);
+  }, []);
+
+  const tuneLabel = useMemo(() => {
+    if (!tuneId) return 'Default';
+    const tune = REMINDER_TUNES.find(t => t.id === tuneId);
+    return tune?.name ?? 'Default';
+  }, [tuneId]);
 
   // Voice input state
   const [isListening, setIsListening] = useState(false);
@@ -159,8 +188,9 @@ export function TaskEditorScreen() {
       Alert.alert('Title required', 'Please enter a task title.');
       return;
     }
+    let savedId: string | null = null;
     if (isNew) {
-      addTask({
+      const created = addTask({
         title: title.trim(),
         completed: false,
         categoryId,
@@ -172,6 +202,7 @@ export function TaskEditorScreen() {
         subtasks,
         priority,
       });
+      savedId = created.id;
     } else if (existing) {
       updateTask(existing.id, {
         title: title.trim(),
@@ -183,9 +214,19 @@ export function TaskEditorScreen() {
         subtasks,
         priority,
       });
+      savedId = existing.id;
+    }
+    // Persist tune choice (async but fire-and-forget)
+    if (savedId) {
+      const reminderKey = `task-reminder-${savedId}`;
+      if (tuneId) {
+        setTuneForItem(reminderKey, tuneId).catch(() => {});
+      } else {
+        clearTuneForItem(reminderKey).catch(() => {});
+      }
     }
     navigation.goBack();
-  }, [isNew, title, categoryId, dueDate, reminderDate, repeat, notes, subtasks, priority, existing, addTask, updateTask, navigation]);
+  }, [isNew, title, categoryId, dueDate, reminderDate, repeat, notes, subtasks, priority, existing, addTask, updateTask, navigation, tuneId]);
 
   const handleDelete = useCallback(() => {
     if (!taskId) return;
@@ -505,6 +546,15 @@ export function TaskEditorScreen() {
           </View>
         )}
 
+        {/* Alarm sound picker — only shown when reminder is set */}
+        {reminderDate && (
+          <TouchableOpacity style={styles.row} onPress={() => setShowTunePicker(true)}>
+            <Ionicons name="musical-notes-outline" size={22} color={theme.colors.accent} />
+            <Text style={styles.rowText}>Alarm sound: {tuneLabel}</Text>
+            <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+          </TouchableOpacity>
+        )}
+
         {/* Repeat */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Repeat</Text>
@@ -604,6 +654,14 @@ export function TaskEditorScreen() {
           minimumDate={pickerStep === 'date' ? new Date() : undefined}
         />
       )}
+
+      {/* Reminder Tune Picker */}
+      <ReminderTunePicker
+        visible={showTunePicker}
+        selectedTuneId={tuneId}
+        onSelect={handleTuneSelect}
+        onClose={() => setShowTunePicker(false)}
+      />
     </View>
   );
 }

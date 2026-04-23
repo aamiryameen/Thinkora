@@ -8,6 +8,7 @@
  */
 
 import { Platform } from 'react-native';
+import { loadStreak } from './streakService';
 import type { Task, Habit } from '../types';
 
 let notifee: any = null;
@@ -26,12 +27,18 @@ if (Platform.OS === 'android') {
 const CHANNEL_SMART = 'thinkora-smart';
 const CHANNEL_DIGEST = 'thinkora-digest';
 const CHANNEL_OVERDUE = 'thinkora-overdue';
+const CHANNEL_REFLECTION = 'thinkora-reflection';
+const CHANNEL_WEEKLY = 'thinkora-weekly';
+const CHANNEL_FORGOT = 'thinkora-forgot';
 
 async function ensureChannels() {
   if (!notifee) return;
   await notifee.createChannel({ id: CHANNEL_SMART, name: 'Smart Reminders', importance: 4, sound: 'default', vibration: true });
   await notifee.createChannel({ id: CHANNEL_DIGEST, name: 'Morning Digest', importance: 3, sound: 'default' });
   await notifee.createChannel({ id: CHANNEL_OVERDUE, name: 'Overdue Alerts', importance: 4, sound: 'default', vibration: true });
+  await notifee.createChannel({ id: CHANNEL_REFLECTION, name: 'Evening Reflection', importance: 3, sound: 'default' });
+  await notifee.createChannel({ id: CHANNEL_WEEKLY, name: 'Weekly Review', importance: 4, sound: 'default' });
+  await notifee.createChannel({ id: CHANNEL_FORGOT, name: 'Habit Reminders', importance: 3, sound: 'default' });
 }
 
 // ─── 1. Smart Deadline Reminders ─────────────────────────────────────────────
@@ -127,7 +134,8 @@ export async function scheduleDailyDigest(tasks: Task[], habits: Habit[]): Promi
   });
 
   const activeHabits = habits.filter((h) => !h.archived);
-  const body = buildDigestBody(todayTasks, activeHabits);
+  const streakData = await loadStreak();
+  const body = buildDigestBody(todayTasks, activeHabits, streakData.currentStreak);
 
   const trigger = {
     type: TriggerType.TIMESTAMP,
@@ -157,15 +165,18 @@ export async function cancelDailyDigest(): Promise<void> {
   try { await notifee.cancelNotification(DIGEST_NOTIF_ID); } catch {}
 }
 
-function buildDigestBody(todayTasks: Task[], habits: Habit[]): string {
+function buildDigestBody(todayTasks: Task[], habits: Habit[], streak: number): string {
   const parts: string[] = [];
   if (todayTasks.length > 0) {
-    parts.push(`${todayTasks.length} task${todayTasks.length !== 1 ? 's' : ''} due today`);
+    parts.push(`${todayTasks.length} task${todayTasks.length !== 1 ? 's' : ''} due`);
   } else {
-    parts.push('No tasks due today');
+    parts.push('No tasks due');
   }
   if (habits.length > 0) {
     parts.push(`${habits.length} habit${habits.length !== 1 ? 's' : ''} to track`);
+  }
+  if (streak > 0) {
+    parts.push(`${streak}-day streak 🔥 — don't break it!`);
   }
   return parts.join(' · ');
 }
@@ -275,4 +286,170 @@ async function scheduleNextOverdueCheck(): Promise<void> {
     },
     trigger
   );
+}
+
+// ─── 4. Evening Reflection (8 PM Daily) ──────────────────────────────────────
+
+const REFLECTION_NOTIF_ID = 'evening-reflection';
+
+/**
+ * Schedule 8 PM daily "How was your day?" notification.
+ * Tapping opens the mood journal.
+ */
+export async function scheduleEveningReflection(): Promise<void> {
+  if (Platform.OS !== 'android' || !notifee) return;
+  await ensureChannels();
+
+  try { await notifee.cancelNotification(REFLECTION_NOTIF_ID); } catch {}
+
+  const now = new Date();
+  const next8pm = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 20, 0, 0, 0);
+  if (next8pm.getTime() <= Date.now()) {
+    next8pm.setDate(next8pm.getDate() + 1);
+  }
+
+  const trigger = {
+    type: TriggerType.TIMESTAMP,
+    timestamp: next8pm.getTime(),
+    alarmManager: true,
+    repeatFrequency: RepeatFrequency.DAILY,
+  };
+
+  await notifee.createTriggerNotification(
+    {
+      id: REFLECTION_NOTIF_ID,
+      title: '🌙 How was your day?',
+      body: 'Take 30 seconds to reflect — your streak depends on it!',
+      android: {
+        channelId: CHANNEL_REFLECTION,
+        sound: 'default',
+        pressAction: { id: 'default', launchActivity: 'default' },
+      },
+      data: { type: 'reflection', screen: 'MoodJournal' },
+    },
+    trigger
+  );
+}
+
+export async function cancelEveningReflection(): Promise<void> {
+  if (Platform.OS !== 'android' || !notifee) return;
+  try { await notifee.cancelNotification(REFLECTION_NOTIF_ID); } catch {}
+}
+
+// ─── 5. Weekly Review (Sunday 6 PM) ──────────────────────────────────────────
+
+const WEEKLY_NOTIF_ID = 'weekly-review';
+
+/**
+ * Schedule Sunday 6 PM weekly review notification.
+ */
+export async function scheduleWeeklyReview(tasks: Task[], habits: Habit[]): Promise<void> {
+  if (Platform.OS !== 'android' || !notifee) return;
+  await ensureChannels();
+
+  try { await notifee.cancelNotification(WEEKLY_NOTIF_ID); } catch {}
+
+  // Next Sunday at 6 PM
+  const now = new Date();
+  const daysUntilSunday = (7 - now.getDay()) % 7 || 7; // if today is Sunday, go to next Sunday
+  const nextSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysUntilSunday, 18, 0, 0, 0);
+  // If today IS Sunday and it's before 6 PM, use today
+  if (now.getDay() === 0 && now.getHours() < 18) {
+    nextSunday.setDate(now.getDate());
+  }
+  if (nextSunday.getTime() <= Date.now()) {
+    nextSunday.setDate(nextSunday.getDate() + 7);
+  }
+
+  const completedThisWeek = tasks.filter(t => {
+    if (!t.completed) return false;
+    const weekAgo = Date.now() - 7 * 86400000;
+    return t.updatedAt >= weekAgo;
+  }).length;
+
+  const activeHabits = habits.filter(h => !h.archived).length;
+
+  const trigger = {
+    type: TriggerType.TIMESTAMP,
+    timestamp: nextSunday.getTime(),
+    alarmManager: true,
+    repeatFrequency: RepeatFrequency.WEEKLY,
+  };
+
+  await notifee.createTriggerNotification(
+    {
+      id: WEEKLY_NOTIF_ID,
+      title: '📊 Your weekly review is ready',
+      body: completedThisWeek > 0
+        ? `You completed ${completedThisWeek} task${completedThisWeek !== 1 ? 's' : ''} this week. See your insights!`
+        : 'Check your weekly progress and insights.',
+      android: {
+        channelId: CHANNEL_WEEKLY,
+        sound: 'default',
+        pressAction: { id: 'default', launchActivity: 'default' },
+      },
+      data: { type: 'weekly-review', screen: 'Reports' },
+    },
+    trigger
+  );
+}
+
+export async function cancelWeeklyReview(): Promise<void> {
+  if (Platform.OS !== 'android' || !notifee) return;
+  try { await notifee.cancelNotification(WEEKLY_NOTIF_ID); } catch {}
+}
+
+// ─── 6. "Forgot Something?" Habit Alerts ─────────────────────────────────────
+
+/**
+ * Schedule reminders for habits with a `reminderTime` (HH:mm).
+ * Fires only if the habit wasn't completed today.
+ *
+ * Note: notifee delivers these at the configured time. We rely on each habit's
+ * own reminderTime (user-set). Runs silently if already completed today.
+ */
+export async function syncHabitReminders(habits: Habit[]): Promise<void> {
+  if (Platform.OS !== 'android' || !notifee) return;
+  await ensureChannels();
+
+  for (const habit of habits) {
+    const notifId = `habit-reminder-${habit.id}`;
+    try { await notifee.cancelNotification(notifId); } catch {}
+
+    if (habit.archived || !habit.reminderTime) continue;
+
+    const [hh, mm] = habit.reminderTime.split(':').map(Number);
+    if (Number.isNaN(hh) || Number.isNaN(mm)) continue;
+
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const completedToday = (habit.completedDates ?? []).includes(todayKey);
+
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, 0, 0);
+    if (next.getTime() <= Date.now() || completedToday) {
+      next.setDate(next.getDate() + 1);
+    }
+
+    const trigger = {
+      type: TriggerType.TIMESTAMP,
+      timestamp: next.getTime(),
+      alarmManager: true,
+      repeatFrequency: RepeatFrequency.DAILY,
+    };
+
+    await notifee.createTriggerNotification(
+      {
+        id: notifId,
+        title: `${habit.icon || '⏰'} Forgot something?`,
+        body: `Time for your habit: ${habit.name}`,
+        android: {
+          channelId: CHANNEL_FORGOT,
+          sound: 'default',
+          pressAction: { id: 'default', launchActivity: 'default' },
+        },
+        data: { type: 'habit-reminder', habitId: habit.id, screen: 'HabitTracker' },
+      },
+      trigger
+    );
+  }
 }
