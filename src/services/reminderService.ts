@@ -15,10 +15,60 @@ if (Platform.OS === 'android') {
 }
 
 const SNOOZE_CHANNEL_ID = 'thinkora_snooze';
-const ALARM_CHANNEL_ID = 'thinkora_alarm';
+/**
+ * Channel ID version. Bump this when the bundled sound assets change so
+ * Android recreates the channels with fresh sounds. Android caches a
+ * channel's sound at creation time and ignores updates — versioning the ID
+ * is the only reliable way to force a refresh.
+ */
+const CHANNEL_VERSION = 'v2';
+const ALARM_CHANNEL_ID = `thinkora_alarm_${CHANNEL_VERSION}`;
+
+const TUNE_RESOURCES: { id: string; resource: string }[] = [
+  { id: 'chime',     resource: 'reminder_chime' },
+  { id: 'marimba',   resource: 'reminder_marimba' },
+  { id: 'ding',      resource: 'reminder_ding' },
+  { id: 'bell',      resource: 'reminder_bell' },
+  { id: 'pop',       resource: 'reminder_pop' },
+  { id: 'soft',      resource: 'reminder_soft' },
+  { id: 'xylophone', resource: 'reminder_xylophone' },
+  { id: 'digital',   resource: 'reminder_digital' },
+  { id: 'classic',   resource: 'reminder_classic' },
+  { id: 'twinkle',   resource: 'reminder_twinkle' },
+];
+
+/** Channel ID for a specific tune. Defaults to the alarm channel. */
+function channelIdForTune(tuneId: string): string {
+  if (!tuneId || tuneId === 'alarm') return ALARM_CHANNEL_ID;
+  // Custom user-uploaded tunes get their own ad-hoc channel (created on demand).
+  if (tuneId.startsWith('custom_')) return `thinkora_alarm_${tuneId}_${CHANNEL_VERSION}`;
+  return `thinkora_alarm_${tuneId}_${CHANNEL_VERSION}`;
+}
+
+/** Create an ad-hoc notification channel for a custom user-uploaded tune.
+ *  Android requires channels to be created before notifications use them, and
+ *  channel sounds are immutable once created — so each unique custom tune URI
+ *  gets its own channel ID. */
+async function ensureCustomChannel(tuneId: string, soundUri: string): Promise<void> {
+  if (Platform.OS !== 'android' || !notifee) return;
+  await notifee.createChannel({
+    id: channelIdForTune(tuneId),
+    name: `Alarm — Custom`,
+    importance: 4,
+    sound: soundUri,
+    vibration: true,
+    vibrationPattern: [500, 200, 500, 200, 500, 200],
+    lights: true,
+    lightColor: '#FF0000',
+  });
+}
+
+let channelsCreated = false;
 
 export async function createNotificationChannel(): Promise<void> {
   if (Platform.OS !== 'android' || !notifee) return;
+  if (channelsCreated) return; // Idempotent — only run once per app session.
+
   await notifee.createChannel({
     id: NOTIFICATION_CHANNEL_ID,
     name: 'Reminders',
@@ -33,11 +83,11 @@ export async function createNotificationChannel(): Promise<void> {
     sound: 'default',
     vibration: true,
   });
-  // Alarm-style channel with loud sound and persistent vibration
+  // Default alarm channel (used when tune.id === 'alarm' or no tune set)
   await notifee.createChannel({
     id: ALARM_CHANNEL_ID,
     name: 'Task Alarms',
-    importance: 4, // HIGH — heads-up + sound
+    importance: 4,
     sound: 'alarm',
     vibration: true,
     vibrationPattern: [500, 200, 500, 200, 500, 200],
@@ -45,23 +95,11 @@ export async function createNotificationChannel(): Promise<void> {
     lightColor: '#FF0000',
   });
 
-  // Create one channel per tune so users can pick sound per task/note.
-  // Android caches channel sound after first creation — can't change later.
-  const tunes = [
-    { id: 'chime',     resource: 'reminder_chime' },
-    { id: 'marimba',   resource: 'reminder_marimba' },
-    { id: 'ding',      resource: 'reminder_ding' },
-    { id: 'bell',      resource: 'reminder_bell' },
-    { id: 'pop',       resource: 'reminder_pop' },
-    { id: 'soft',      resource: 'reminder_soft' },
-    { id: 'xylophone', resource: 'reminder_xylophone' },
-    { id: 'digital',   resource: 'reminder_digital' },
-    { id: 'classic',   resource: 'reminder_classic' },
-    { id: 'twinkle',   resource: 'reminder_twinkle' },
-  ];
-  for (const t of tunes) {
+  // One channel per tune. Android bakes the sound into the channel on
+  // creation and ignores later updates, so each tune gets a unique channel.
+  for (const t of TUNE_RESOURCES) {
     await notifee.createChannel({
-      id: `thinkora_alarm_${t.id}`,
+      id: channelIdForTune(t.id),
       name: `Alarm — ${t.id}`,
       importance: 4,
       sound: t.resource,
@@ -71,6 +109,24 @@ export async function createNotificationChannel(): Promise<void> {
       lightColor: '#FF0000',
     });
   }
+
+  // Best-effort cleanup of old un-versioned channels from prior installs
+  // so users don't see ghost duplicates in system Notification settings.
+  try {
+    const oldIds = [
+      'thinkora_alarm',
+      ...TUNE_RESOURCES.map((t) => `thinkora_alarm_${t.id}`),
+    ];
+    for (const id of oldIds) {
+      // @ts-ignore — deleteChannel exists at runtime on Android
+      await notifee.deleteChannel?.(id).catch(() => {});
+    }
+  } catch {
+    // ignore — cleanup is non-critical
+  }
+
+  channelsCreated = true;
+  if (__DEV__) console.log('[Notifications] Channels created (', CHANNEL_VERSION, ')');
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
@@ -123,8 +179,13 @@ export async function scheduleTimeReminder(reminder: Reminder): Promise<string |
   if (repeatFreq !== undefined) trigger.repeatFrequency = repeatFreq;
   // Per-item tune override if set; otherwise global default tune
   const tune = await getTuneForItem(reminder.id);
-  // Each tune has its own channel (sound baked into channel on Android)
-  const channelId = tune.id === 'alarm' ? ALARM_CHANNEL_ID : `thinkora_alarm_${tune.id}`;
+  const isCustom = tune.id.startsWith('custom_');
+  if (isCustom) {
+    // Custom tune: ensure its dedicated channel exists with the user's audio
+    await ensureCustomChannel(tune.id, tune.resource);
+  }
+  const channelId = channelIdForTune(tune.id);
+  if (__DEV__) console.log('[Reminder] Using channel:', channelId, 'sound:', tune.resource);
   const id = await notifee.createTriggerNotification(
     {
       id: reminder.id,

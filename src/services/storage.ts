@@ -46,6 +46,7 @@ const defaultSettings: AppSettings = {
   useBiometrics: false,
   themeColorId: 'default',
   pomodoroSettings: { ...DEFAULT_POMODORO },
+  geminiApiKey: null,
 };
 
 // ─── Settings helpers (key/value table) ──────────────────────────────────────
@@ -590,4 +591,5 @@ export const storage = {
   getSharedLists, setSharedLists,
   getTaskTemplates, setTaskTemplates,
   getBadges, setBadges,
+  getSetting, setSetting,
 };

@@ -22,8 +22,12 @@ import {
   setSelectedReminderTune,
   previewReminderTune,
   stopPreviewTune,
+  getCustomTunes,
+  deleteCustomTune,
   type ReminderTune,
+  type CustomTune,
 } from '../services/soundService';
+import { pickAndAddCustomTune } from '../services/customTuneService';
 import { PinSetupScreen } from './AppLockScreen';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -47,11 +51,50 @@ export function SettingsScreen() {
   const [selectedTune, setSelectedTuneState] = useState<ReminderTune>(REMINDER_TUNES[0]);
   const [showTunePicker, setShowTunePicker] = useState(false);
   const [playingTuneId, setPlayingTuneId] = useState<string | null>(null);
+  const [customTunes, setCustomTunes] = useState<CustomTune[]>([]);
+  const [uploadingTune, setUploadingTune] = useState(false);
 
   useEffect(() => {
     isQuickCaptureEnabled().then(setQuickCapture);
     getSelectedReminderTune().then(setSelectedTuneState);
+    getCustomTunes().then(setCustomTunes);
   }, []);
+
+  const handleUploadCustomTune = async () => {
+    setUploadingTune(true);
+    try {
+      const tune = await pickAndAddCustomTune();
+      if (tune) {
+        const list = await getCustomTunes();
+        setCustomTunes(list);
+      }
+    } catch (err: any) {
+      if (err?.message && !/cancel/i.test(String(err.message))) {
+        Alert.alert('Upload Failed', err.message);
+      }
+    } finally {
+      setUploadingTune(false);
+    }
+  };
+
+  const handleDeleteCustomTune = (tune: CustomTune) => {
+    Alert.alert('Delete custom sound?', tune.name, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteCustomTune(tune.id);
+          setCustomTunes(await getCustomTunes());
+          // If the deleted tune was selected, fall back to default
+          if (selectedTune.id === tune.id) {
+            await setSelectedReminderTune(REMINDER_TUNES[0].id);
+            setSelectedTuneState(REMINDER_TUNES[0]);
+          }
+        },
+      },
+    ]);
+  };
 
   // Stop preview when modal closes
   useEffect(() => {
@@ -240,6 +283,35 @@ export function SettingsScreen() {
           </View>
         </View>
 
+        {/* Cloud Sync */}
+        <View>
+          <Text style={styles.sectionTitle}>Sync & Backup</Text>
+          <View style={styles.card}>
+            <TouchableOpacity style={[styles.row, styles.rowLast]} onPress={() => navigation.navigate('CloudSync')}>
+              <View style={[styles.rowIconWrap, { backgroundColor: '#3B82F620' }]}>
+                <Ionicons name="cloud-outline" size={20} color="#3B82F6" />
+              </View>
+              <Text style={styles.rowLabel}>Cloud Sync & Backup</Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* AI */}
+        <View>
+          <Text style={styles.sectionTitle}>AI</Text>
+          <View style={styles.card}>
+            <TouchableOpacity style={[styles.row, styles.rowLast]} onPress={() => navigation.navigate('AISettings')}>
+              <View style={[styles.rowIconWrap, { backgroundColor: '#7C3AED20' }]}>
+                <Ionicons name="sparkles-outline" size={20} color="#7C3AED" />
+              </View>
+              <Text style={styles.rowLabel}>AI Assistant</Text>
+              <Text style={styles.rowValue}>{settings.geminiApiKey ? 'Your key' : 'Thinkora AI'}</Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Security */}
         <View>
           <Text style={styles.sectionTitle}>Security</Text>
@@ -346,6 +418,99 @@ export function SettingsScreen() {
             <Text style={{ fontSize: 13, color: theme.colors.textMuted, marginBottom: 12, paddingHorizontal: 4 }}>
               Tap any sound to preview and select.
             </Text>
+
+            {/* Upload Custom Sound Button */}
+            <TouchableOpacity
+              onPress={handleUploadCustomTune}
+              disabled={uploadingTune}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 12,
+                padding: 14, marginBottom: 16, borderRadius: 14,
+                backgroundColor: theme.colors.primary + '15',
+                borderWidth: 2, borderColor: theme.colors.primary,
+                borderStyle: 'dashed',
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={{
+                width: 40, height: 40, borderRadius: 10,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: theme.colors.primary,
+              }}>
+                <Ionicons name={uploadingTune ? 'hourglass-outline' : 'cloud-upload-outline'} size={20} color="#FFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.primary }}>
+                  {uploadingTune ? 'Uploading...' : 'Upload Custom Sound'}
+                </Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textMuted, marginTop: 2 }}>
+                  Pick an audio file from your phone (MP3, M4A, WAV)
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Custom uploaded tunes */}
+            {customTunes.length > 0 && (
+              <>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: theme.colors.textMuted, marginBottom: 8, paddingHorizontal: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
+                  My Sounds
+                </Text>
+                {customTunes.map((custom) => {
+                  const tune: ReminderTune = { id: custom.id, name: custom.name, resource: custom.uri };
+                  const isSelected = selectedTune.id === tune.id;
+                  const isPlaying = playingTuneId === tune.id;
+                  return (
+                    <View
+                      key={tune.id}
+                      style={{
+                        flexDirection: 'row', alignItems: 'center', gap: 12,
+                        padding: 14, marginBottom: 8, borderRadius: 14,
+                        backgroundColor: isSelected ? theme.colors.primary + '15' : theme.colors.cardBg,
+                        borderWidth: 2,
+                        borderColor: isSelected ? theme.colors.primary : 'transparent',
+                      }}
+                    >
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}
+                        onPress={() => handleSelectTune(tune)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{
+                          width: 40, height: 40, borderRadius: 10,
+                          alignItems: 'center', justifyContent: 'center',
+                          backgroundColor: isSelected ? theme.colors.primary : '#A855F7' + '20',
+                        }}>
+                          <Ionicons name="cloud" size={20} color={isSelected ? '#FFF' : '#A855F7'} />
+                        </View>
+                        <Text numberOfLines={1} style={{ flex: 1, fontSize: 15, fontWeight: '600', color: theme.colors.text }}>
+                          {tune.name}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        onPress={() => togglePreview(tune)}
+                      >
+                        <Ionicons
+                          name={isPlaying ? 'stop-circle' : 'play-circle-outline'}
+                          size={26}
+                          color={isPlaying ? theme.colors.error : theme.colors.textMuted}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        onPress={() => handleDeleteCustomTune(custom)}
+                      >
+                        <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+                <Text style={{ fontSize: 11, fontWeight: '700', color: theme.colors.textMuted, marginTop: 8, marginBottom: 8, paddingHorizontal: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
+                  Built-In
+                </Text>
+              </>
+            )}
+
             {REMINDER_TUNES.map((tune) => {
               const isSelected = selectedTune.id === tune.id;
               const isPlaying = playingTuneId === tune.id;

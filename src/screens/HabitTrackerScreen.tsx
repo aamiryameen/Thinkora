@@ -194,7 +194,16 @@ export function HabitTrackerScreen() {
           </TouchableOpacity>
           <Text style={styles.title}>Habits</Text>
         </View>
-        <Text style={styles.subtitle}>{habits.filter((h) => (h.completedDates ?? []).includes(today)).length}/{habits.length} completed today</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={styles.subtitle}>{habits.filter((h) => (h.completedDates ?? []).includes(today)).length}/{habits.length} done</Text>
+          <TouchableOpacity
+            onPress={() => (navigation as any).navigate('HabitStacks')}
+            style={{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.inputBg }}
+            hitSlop={6}
+          >
+            <Ionicons name="link-outline" size={20} color={theme.colors.text} />
+          </TouchableOpacity>
+        </View>
       </View>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {habits.length === 0 ? (

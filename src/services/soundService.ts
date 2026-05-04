@@ -3,7 +3,8 @@
  *
  * Manages reminder tunes + ambient background sounds for Pomodoro.
  *
- * Reminder tunes: short (1-2 sec), played by the notification system.
+ * Reminder tunes: short samples played by the notification system.
+ *   Preview loops the sample for ~4 seconds so users can judge the tone.
  * Ambient sounds: long loops (30 sec), played in-app during focus sessions.
  */
 
@@ -46,10 +47,69 @@ export const REMINDER_TUNES: ReminderTune[] = [
 
 const TUNE_KEY = '@thinkora/reminder_tune';
 const PER_ITEM_TUNE_KEY = '@thinkora/per_item_tunes';
+const CUSTOM_TUNES_KEY = '@thinkora/custom_tunes';
+
+// ── Custom user-uploaded tunes ─────────────────────────────────
+
+export interface CustomTune {
+  id: string;          // 'custom_<timestamp>'
+  name: string;        // user-provided or filename
+  uri: string;         // absolute file:// path on device
+  addedAt: number;
+}
+
+export async function getCustomTunes(): Promise<CustomTune[]> {
+  try {
+    const raw = await AsyncStorage.getItem(CUSTOM_TUNES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+async function saveCustomTunes(tunes: CustomTune[]): Promise<void> {
+  await AsyncStorage.setItem(CUSTOM_TUNES_KEY, JSON.stringify(tunes));
+}
+
+export async function addCustomTune(uri: string, name: string): Promise<CustomTune> {
+  const tune: CustomTune = {
+    id: `custom_${Date.now()}`,
+    name,
+    uri,
+    addedAt: Date.now(),
+  };
+  const list = await getCustomTunes();
+  list.push(tune);
+  await saveCustomTunes(list);
+  return tune;
+}
+
+export async function deleteCustomTune(id: string): Promise<void> {
+  const list = await getCustomTunes();
+  await saveCustomTunes(list.filter(t => t.id !== id));
+}
+
+/** Combined list of built-in + custom tunes for pickers. */
+export async function getAllTunes(): Promise<ReminderTune[]> {
+  const custom = await getCustomTunes();
+  const customAsTunes: ReminderTune[] = custom.map(c => ({
+    id: c.id,
+    name: c.name,
+    resource: c.uri, // file:// URI for sound playback / notifee
+  }));
+  return [...REMINDER_TUNES, ...customAsTunes];
+}
+
+function isCustomTuneId(id: string): boolean {
+  return id.startsWith('custom_');
+}
 
 export async function getSelectedReminderTune(): Promise<ReminderTune> {
   try {
     const id = await AsyncStorage.getItem(TUNE_KEY);
+    if (!id) return REMINDER_TUNES[0];
+    if (isCustomTuneId(id)) {
+      const custom = (await getCustomTunes()).find(c => c.id === id);
+      if (custom) return { id: custom.id, name: custom.name, resource: custom.uri };
+    }
     return REMINDER_TUNES.find(t => t.id === id) ?? REMINDER_TUNES[0];
   } catch {
     return REMINDER_TUNES[0];
@@ -85,8 +145,13 @@ export async function getTuneForItem(itemId: string): Promise<ReminderTune> {
   const map = await loadPerItemTunes();
   const tuneId = map[itemId];
   if (tuneId) {
-    const tune = REMINDER_TUNES.find(t => t.id === tuneId);
-    if (tune) return tune;
+    if (isCustomTuneId(tuneId)) {
+      const custom = (await getCustomTunes()).find(c => c.id === tuneId);
+      if (custom) return { id: custom.id, name: custom.name, resource: custom.uri };
+    } else {
+      const tune = REMINDER_TUNES.find(t => t.id === tuneId);
+      if (tune) return tune;
+    }
   }
   return getSelectedReminderTune();
 }
@@ -121,36 +186,57 @@ export async function getTuneIdForItem(itemId: string): Promise<string | null> {
 let currentPreview: any = null;
 let currentPreviewId: string | null = null;
 
+/** Safety cap for preview playback (ms) so it can never run forever. */
+const PREVIEW_MAX_DURATION_MS = 30000;
+let previewAutoStopTimer: ReturnType<typeof setTimeout> | null = null;
+/** Optional callback fired when the preview stops (for any reason). */
+let previewEndCallback: (() => void) | null = null;
+
 /**
- * Preview a reminder tune — plays until tune ends or user stops it.
- * Call previewReminderTune() with same id again to stop, or stopPreviewTune().
+ * Preview a reminder tune. Plays at full volume and loops the sample so
+ * short alarm clips are clearly audible. Auto-stops after 30s or when the
+ * user taps stop. Pass `onEnd` to sync a "playing" UI indicator.
  */
-export function previewReminderTune(tune: ReminderTune): void {
+export function previewReminderTune(tune: ReminderTune, onEnd?: () => void): void {
   if (!Sound) return;
-  // Stop any existing preview first
   stopPreviewTune();
-  const s = new Sound(`${tune.resource}.wav`, Sound.MAIN_BUNDLE, (error: any) => {
+  previewEndCallback = onEnd ?? null;
+
+  // Custom user-uploaded tunes use absolute file:// paths; built-in use bundle resources.
+  const isCustom = isCustomTuneId(tune.id);
+  const path = isCustom ? tune.resource : `${tune.resource}.wav`;
+  const basePath = isCustom ? '' : Sound.MAIN_BUNDLE;
+  const s = new Sound(path, basePath, (error: any) => {
     if (error) {
+      console.warn('[Sound] Failed to load tune:', tune.resource, error);
       currentPreview = null;
       currentPreviewId = null;
+      const cb = previewEndCallback;
+      previewEndCallback = null;
+      cb?.();
       return;
     }
-    s.setVolume(0.8);
-    s.setNumberOfLoops(0); // play once (no loop)
+    s.setVolume(1.0);
+    // Loop so short samples remain audible the whole preview window.
+    s.setNumberOfLoops(-1);
     currentPreview = s;
     currentPreviewId = tune.id;
-    s.play(() => {
-      // Cleanup when playback finishes
+    s.play();
+
+    // Hard cap so a forgotten preview doesn't play forever.
+    previewAutoStopTimer = setTimeout(() => {
       if (currentPreviewId === tune.id) {
-        currentPreview = null;
-        currentPreviewId = null;
+        stopPreviewTune();
       }
-      s.release();
-    });
+    }, PREVIEW_MAX_DURATION_MS);
   });
 }
 
 export function stopPreviewTune(): void {
+  if (previewAutoStopTimer) {
+    clearTimeout(previewAutoStopTimer);
+    previewAutoStopTimer = null;
+  }
   if (currentPreview) {
     try {
       currentPreview.stop();
@@ -159,6 +245,9 @@ export function stopPreviewTune(): void {
     currentPreview = null;
     currentPreviewId = null;
   }
+  const cb = previewEndCallback;
+  previewEndCallback = null;
+  cb?.();
 }
 
 export function getCurrentPreviewId(): string | null {

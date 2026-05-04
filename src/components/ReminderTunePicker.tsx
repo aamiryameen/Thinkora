@@ -30,26 +30,19 @@ export function ReminderTunePicker({ visible, selectedTuneId, onSelect, onClose 
     }
   }, [visible]);
 
+  const startPreview = useCallback((tune: ReminderTune) => {
+    setPlayingId(tune.id);
+    previewReminderTune(tune, () => {
+      setPlayingId((curr) => (curr === tune.id ? null : curr));
+    });
+  }, []);
+
   const handleSelect = useCallback((tune: ReminderTune | null) => {
+    // Selecting silently — never auto-play. Use the play button to preview.
+    stopPreviewTune();
+    setPlayingId(null);
     onSelect(tune?.id ?? null);
-    if (!tune) {
-      stopPreviewTune();
-      setPlayingId(null);
-      return;
-    }
-    // If same tune is playing, stop it. Otherwise switch to this one.
-    if (playingId === tune.id) {
-      stopPreviewTune();
-      setPlayingId(null);
-    } else {
-      previewReminderTune(tune);
-      setPlayingId(tune.id);
-      // Auto-clear playing state after tune duration (~30s)
-      setTimeout(() => {
-        setPlayingId((curr) => (curr === tune.id ? null : curr));
-      }, 30500);
-    }
-  }, [onSelect, playingId]);
+  }, [onSelect]);
 
   const handleClose = useCallback(() => {
     stopPreviewTune();
@@ -109,23 +102,14 @@ export function ReminderTunePicker({ visible, selectedTuneId, onSelect, onClose 
           },
         ]}
       >
-        {/* Tap main row to select (doesn't toggle playback) */}
+        {/* Tap main row to select only — preview is via the play button */}
         <TouchableOpacity
           style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}
           onPress={() => {
+            // Selecting silently — never auto-play. Stop any current preview.
+            stopPreviewTune();
+            setPlayingId(null);
             onSelect(id);
-            if (tune) {
-              if (playingId !== tune.id) {
-                previewReminderTune(tune);
-                setPlayingId(tune.id);
-                setTimeout(() => {
-                  setPlayingId((curr) => (curr === tune.id ? null : curr));
-                }, 30500);
-              }
-            } else {
-              stopPreviewTune();
-              setPlayingId(null);
-            }
           }}
           activeOpacity={0.7}
         >
@@ -154,13 +138,8 @@ export function ReminderTunePicker({ visible, selectedTuneId, onSelect, onClose 
             onPress={() => {
               if (isPlaying) {
                 stopPreviewTune();
-                setPlayingId(null);
               } else {
-                previewReminderTune(tune);
-                setPlayingId(tune.id);
-                setTimeout(() => {
-                  setPlayingId((curr) => (curr === tune.id ? null : curr));
-                }, 30500);
+                startPreview(tune);
               }
             }}
           >
@@ -186,7 +165,7 @@ export function ReminderTunePicker({ visible, selectedTuneId, onSelect, onClose 
         </View>
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 20 }}>
           <Text style={styles.hint}>
-            Tap any sound to preview and select. All alarms play for 30 seconds.
+            Tap a sound to select it. Tap the play button to preview.
           </Text>
 
           {/* Use Default option */}

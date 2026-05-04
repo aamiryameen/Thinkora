@@ -124,6 +124,13 @@ interface AppContextValue extends AppState {
   streak: StreakData;
   recordStreakActivity: () => Promise<number | null>;
 
+  // Cloud sync
+  restoreData: (data: {
+    notes?: Note[]; folders?: Folder[]; tags?: Tag[];
+    reminders?: Reminder[]; tasks?: Task[]; taskCategories?: TaskCategory[];
+    settings?: AppSettings;
+  }) => void;
+
   isHydrated: boolean;
 }
 
@@ -154,6 +161,7 @@ const defaultSettings: AppSettings = {
   useBiometrics: false,
   themeColorId: 'default',
   pomodoroSettings: { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, sessionsBeforeLongBreak: 4 },
+  geminiApiKey: null,
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -631,6 +639,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSettings((s) => ({ ...s, ...patch }));
   }, []);
 
+  // ─── Cloud restore ─────────────────────────────────
+  const restoreData = useCallback((data: {
+    notes?: Note[]; folders?: Folder[]; tags?: Tag[];
+    reminders?: Reminder[]; tasks?: Task[]; taskCategories?: TaskCategory[];
+    settings?: AppSettings;
+  }) => {
+    if (data.notes !== undefined) setNotes(data.notes);
+    if (data.folders !== undefined) setFolders(data.folders);
+    if (data.tags !== undefined) setTags(data.tags);
+    if (data.reminders !== undefined) setReminders(data.reminders);
+    if (data.tasks !== undefined) setTasks(data.tasks);
+    if (data.taskCategories !== undefined) setTaskCategories(data.taskCategories.length > 0 ? data.taskCategories : DEFAULT_CATEGORIES);
+    if (data.settings !== undefined) setSettings(data.settings);
+  }, []);
+
   // ─── Streak ───────────────────────────────────────
   const recordStreakActivity = useCallback(async (): Promise<number | null> => {
     try {
@@ -656,7 +679,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
-      updateSettings, recordStreakActivity,
+      updateSettings, recordStreakActivity, restoreData,
     }),
     [
       notes, folders, tags, reminders, filter, loaded,
@@ -670,7 +693,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
-      updateSettings, recordStreakActivity,
+      updateSettings, recordStreakActivity, restoreData,
     ]
   );
 

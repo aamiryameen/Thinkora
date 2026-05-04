@@ -247,4 +247,6 @@ export interface AppSettings {
   useBiometrics: boolean;
   themeColorId: AppThemeId;
   pomodoroSettings: PomodoroSettings;
+  /** User-provided Gemini API key. Stored locally on-device only. */
+  geminiApiKey: string | null;
 }

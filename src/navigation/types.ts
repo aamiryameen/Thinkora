@@ -18,6 +18,15 @@ export type RootStackParamList = {
   CategoryManager: undefined;
   Reports: undefined;
   Settings: undefined;
+  AISettings: undefined;
+  Scan: undefined;
+  Quotes: undefined;
+  CloudSync: undefined;
+  TimeBlocking: undefined;
+  ShareNoteCard: { noteId: string };
+  ProductivityStats: undefined;
+  Goals: undefined;
+  HabitStacks: undefined;
   PrivacyPolicy: undefined;
   Search: undefined;
   Gantt: undefined;
@@ -38,7 +47,9 @@ export type TaskEditorParams = {
 export type HomeTabParamList = {
   MyDay: undefined;
   Tasks: undefined;
-  Quotes: undefined;
+  /** Centered placeholder route. Tapping the tab actually navigates to the
+   *  full-screen Scan flow in the root stack. */
+  ScanTab: undefined;
   Notes: undefined;
   Dashboard: undefined;
 };

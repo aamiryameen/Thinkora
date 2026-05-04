@@ -23,6 +23,11 @@ const FEATURE_LINKS: QuickLink[] = [
   { label: 'Pomodoro', icon: 'timer-outline', color: '#14B8A6', route: 'Pomodoro' },
   { label: 'Journal', icon: 'happy-outline', color: '#EC4899', route: 'MoodJournal' },
   { label: 'Matrix', icon: 'apps-outline', color: '#8B5CF6', route: 'Eisenhower' },
+  { label: 'Time Blocks', icon: 'time-outline', color: '#6366F1', route: 'TimeBlocking' },
+  { label: 'Goals', icon: 'trophy-outline', color: '#F59E0B', route: 'Goals' },
+  { label: 'Stats', icon: 'stats-chart-outline', color: '#10B981', route: 'ProductivityStats' },
+  { label: 'Habit Stacks', icon: 'link-outline', color: '#EC4899', route: 'HabitStacks' },
+  { label: 'Cloud Sync', icon: 'cloud-outline', color: '#3B82F6', route: 'CloudSync' },
   { label: 'Lists', icon: 'people-outline', color: '#3B82F6', route: 'SharedLists' },
   { label: 'Templates', icon: 'copy-outline', color: '#6366F1', route: 'Templates' },
   { label: 'Badges', icon: 'trophy-outline', color: '#F59E0B', route: 'Badges' },
@@ -61,7 +66,7 @@ export function DashboardScreen() {
     scroll: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.lg,
-      paddingBottom: 100,
+      paddingBottom: 180,
       gap: theme.spacing.lg,
     },
     summaryRow: {

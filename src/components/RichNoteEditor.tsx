@@ -132,30 +132,38 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
           flexDirection: 'row',
           alignItems: 'center',
           gap: theme.spacing.sm,
-          paddingRight: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.lg,
+          paddingTop: theme.spacing.lg,
         },
         titleInput: {
           ...theme.typography.title,
           flex: 1,
-          paddingVertical: theme.spacing.sm,
-          paddingHorizontal: theme.spacing.xs,
-          marginBottom: theme.spacing.xs,
+          fontSize: 22,
+          lineHeight: 28,
+          fontWeight: '700',
+          paddingVertical: theme.spacing.xs,
           color: theme.colors.text,
+        },
+        divider: {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: theme.colors.border,
+          marginTop: theme.spacing.md,
+          marginHorizontal: theme.spacing.lg,
         },
         toolbarRow: {
           flexDirection: 'row',
           alignItems: 'center',
-          paddingRight: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.sm,
         },
         toolbar: {
-          backgroundColor: theme.colors.background,
+          backgroundColor: 'transparent',
           minHeight: 40,
           flex: 1,
         },
         editor: {
           flex: 1,
           minHeight: 360,
-          paddingHorizontal: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.md,
         },
         fallbackBody: {
           flex: 1,
@@ -163,26 +171,20 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
           ...theme.typography.body,
           color: theme.colors.text,
           paddingVertical: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.lg,
           textAlignVertical: 'top',
         },
         loading: {
           position: 'absolute',
           left: 0,
           right: 0,
-          top: 120,
+          top: 140,
           alignItems: 'center',
         },
         micBtn: {
-          width: 36,
-          height: 36,
-          borderRadius: 18,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        micBtnSmall: {
-          width: 30,
-          height: 30,
-          borderRadius: 15,
+          width: 32,
+          height: 32,
+          borderRadius: 16,
           alignItems: 'center',
           justifyContent: 'center',
         },
@@ -190,28 +192,31 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
     [theme]
   );
 
-  const renderTitleMic = () => {
-    if (!onTitleVoicePress) return null;
+  const renderMic = (
+    onPress: (() => void) | undefined,
+    active: boolean,
+    size: number,
+  ) => {
+    if (!onPress) return null;
     return (
       <Pressable
-        onPress={onTitleVoicePress}
-        hitSlop={16}
-        style={[styles.micBtn, { backgroundColor: titleVoiceActive ? theme.colors.error : theme.colors.primary }]}
+        onPress={onPress}
+        hitSlop={12}
+        style={[
+          styles.micBtn,
+          {
+            backgroundColor: active ? theme.colors.error : theme.colors.primaryLight,
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+          },
+        ]}
       >
-        <Ionicons name={titleVoiceActive ? 'stop' : 'mic'} size={18} color="#FFF" />
-      </Pressable>
-    );
-  };
-
-  const renderContentMic = () => {
-    if (!onContentVoicePress) return null;
-    return (
-      <Pressable
-        onPress={onContentVoicePress}
-        hitSlop={16}
-        style={[styles.micBtnSmall, { backgroundColor: contentVoiceActive ? theme.colors.error : theme.colors.primary }]}
-      >
-        <Ionicons name={contentVoiceActive ? 'stop' : 'mic'} size={15} color="#FFF" />
+        <Ionicons
+          name={active ? 'stop' : 'mic'}
+          size={Math.round(size * 0.55)}
+          color={active ? '#FFF' : theme.colors.primary}
+        />
       </Pressable>
     );
   };
@@ -228,8 +233,9 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
             editable={editable}
             placeholderTextColor={theme.colors.textDisabled}
           />
-          {renderTitleMic()}
+          {renderMic(onTitleVoicePress, titleVoiceActive, 32)}
         </View>
+        <View style={styles.divider} />
         <TextInput
           style={styles.fallbackBody}
           value={content ? stripHtml(content) : ''}
@@ -254,8 +260,9 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
           editable={editable}
           placeholderTextColor={theme.colors.textDisabled}
         />
-        {renderTitleMic()}
+        {renderMic(onTitleVoicePress, titleVoiceActive, 32)}
       </View>
+      <View style={styles.divider} />
       <View style={styles.toolbarRow}>
         <RichToolbar
           getEditor={() => richRef.current}
@@ -265,12 +272,13 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
             actions.setUnderline,
             actions.insertBulletsList,
             actions.insertOrderedList,
+            actions.checkboxList,
           ]}
           style={styles.toolbar}
           iconTint={theme.colors.icon}
           selectedIconTint={theme.colors.primary}
         />
-        {renderContentMic()}
+        {renderMic(onContentVoicePress, contentVoiceActive, 28)}
       </View>
       <RichEditor
         ref={(r: any) => {

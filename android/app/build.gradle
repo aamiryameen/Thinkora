@@ -82,8 +82,8 @@ android {
         applicationId "com.thinkora"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 14
-        versionName "1.4.1"
+        versionCode 18
+        versionName "1.4.5"
     }
     signingConfigs {
         debug {
@@ -129,6 +129,13 @@ dependencies {
 
     // Google Play In-App Updates
     implementation("com.google.android.play:app-update:2.1.0")
+
+    // ML Kit Text Recognition — additional script bundles.
+    // Latin is included by default via @react-native-ml-kit/text-recognition.
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
+    implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

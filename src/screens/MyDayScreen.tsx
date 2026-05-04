@@ -44,6 +44,7 @@ const FEATURE_SHORTCUTS = [
   { label: 'Matrix', icon: 'grid-outline', color: '#8B5CF6', route: 'Eisenhower' },
   { label: 'Lists', icon: 'people-outline', color: '#3B82F6', route: 'SharedLists' },
   { label: 'Focus', icon: 'timer-outline', color: '#14B8A6', route: 'Pomodoro' },
+  { label: 'Quotes', icon: 'chatbubble-ellipses-outline', color: '#7C3AED', route: 'Quotes' },
   { label: 'Templates', icon: 'copy-outline', color: '#6366F1', route: 'Templates' },
   { label: 'Badges', icon: 'trophy-outline', color: '#F59E0B', route: 'Badges' },
   { label: 'Reports', icon: 'bar-chart-outline', color: '#4A90D9', route: 'Reports' },
@@ -196,7 +197,7 @@ export function MyDayScreen() {
     miniStatNum: { fontSize: 18, fontWeight: '800', color: '#FFF' },
     miniStatLabel: { ...theme.typography.caption, color: '#FFFFFFBB', fontSize: 10 },
     // Scroll
-    scroll: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: 100 },
+    scroll: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: 180 },
     // Quick actions
     quickActionsRow: { flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.xl },
     quickAction: {
@@ -333,11 +334,15 @@ export function MyDayScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Quote */}
-        <View style={styles.quoteCard}>
+        {/* Quote — tap to browse all quotes */}
+        <TouchableOpacity
+          style={styles.quoteCard}
+          onPress={() => navigation.navigate('Quotes')}
+          activeOpacity={0.85}
+        >
           <Text style={styles.quoteText}>"{dailyQuote.text}"</Text>
           {dailyQuote.author ? <Text style={styles.quoteAuthor}>— {dailyQuote.author}</Text> : null}
-        </View>
+        </TouchableOpacity>
 
         {/* Progress row */}
         <View style={styles.progressRow}>

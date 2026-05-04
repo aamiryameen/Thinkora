@@ -12,6 +12,8 @@ import {
   NativeModules,
   DeviceEventEmitter,
   PermissionsAndroid,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -20,6 +22,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Icon } from '../components/Icons';
 import { SubTaskList } from '../components/SubTaskList';
+import { TaskTimer } from '../components/TaskTimer';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { ReminderTunePicker } from '../components/ReminderTunePicker';
 import { useApp } from '../context/AppContext';
@@ -32,6 +35,16 @@ import {
   setTuneForItem,
   clearTuneForItem,
 } from '../services/soundService';
+import {
+  summarizeNote,
+  rewriteNote,
+  fixGrammar,
+  shiftTone,
+  generateSubtasks,
+  GeminiError,
+  type ToneStyle,
+  type AiCallResult,
+} from '../services/geminiService';
 
 type EditorRouteProp = RouteProp<RootStackParamList, 'TaskEditor'>;
 type Nav = NativeStackNavigationProp<RootStackParamList, 'TaskEditor'>;
@@ -66,6 +79,7 @@ export function TaskEditorScreen() {
     toggleSubTaskComplete,
     addSubTask,
     deleteSubTask,
+    settings,
   } = useApp();
 
   const existing = taskId ? getTask(taskId) : null;
@@ -81,6 +95,24 @@ export function TaskEditorScreen() {
   const [subtasks, setSubtasks] = useState(existing?.subtasks ?? []);
   const [tuneId, setTuneIdState] = useState<string | null>(null);
   const [showTunePicker, setShowTunePicker] = useState(false);
+
+  // AI action modal state
+  const [aiActionLabel, setAiActionLabel] = useState<string | null>(null);
+  const [aiActionLoading, setAiActionLoading] = useState(false);
+  const [aiActionResult, setAiActionResult] = useState<string | null>(null);
+  const [aiActionError, setAiActionError] = useState<string | null>(null);
+  const [aiActionRetryable, setAiActionRetryable] = useState(false);
+  const [aiToneMenuOpen, setAiToneMenuOpen] = useState(false);
+  // Subtasks suggestion state — separate from text-result modal
+  const [subtaskSuggestions, setSubtaskSuggestions] = useState<string[] | null>(null);
+  const [subtaskLoading, setSubtaskLoading] = useState(false);
+  const [subtaskError, setSubtaskError] = useState<string | null>(null);
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set());
+  const aiAbortRef = useRef<AbortController | null>(null);
+  const lastAiRunRef = useRef<{
+    label: string;
+    fn: (signal: AbortSignal) => Promise<AiCallResult>;
+  } | null>(null);
 
   // Load per-task tune override (only for existing tasks)
   useEffect(() => {
@@ -326,6 +358,120 @@ export function TaskEditorScreen() {
     }
   }, [existing, deleteSubTask]);
 
+  // ─── AI: text actions (summarize / rewrite / grammar / tone) ───
+  const runTextAiAction = useCallback(
+    async (label: string, fn: (signal: AbortSignal) => Promise<AiCallResult>) => {
+      const text = notes.trim();
+      if (!text) {
+        Alert.alert('Nothing to process', 'Add some text in Notes first.');
+        return;
+      }
+      lastAiRunRef.current = { label, fn };
+      aiAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      aiAbortRef.current = ctrl;
+      setAiActionLabel(label);
+      setAiActionLoading(true);
+      setAiActionResult(null);
+      setAiActionError(null);
+      setAiActionRetryable(false);
+      try {
+        const out = await fn(ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        setAiActionResult(out.text);
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return;
+        const msg = e instanceof GeminiError ? e.message : 'Something went wrong. Please try again.';
+        const canRetry = e instanceof GeminiError ? e.isRetryable : true;
+        setAiActionError(msg);
+        setAiActionRetryable(canRetry);
+      } finally {
+        setAiActionLoading(false);
+      }
+    },
+    [notes],
+  );
+
+  const retryTextAiAction = useCallback(() => {
+    const last = lastAiRunRef.current;
+    if (!last) return;
+    runTextAiAction(last.label, last.fn);
+  }, [runTextAiAction]);
+
+  const closeTextAiModal = useCallback(() => {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    setAiActionLabel(null);
+    setAiActionLoading(false);
+    setAiActionResult(null);
+    setAiActionError(null);
+    setAiActionRetryable(false);
+    setAiToneMenuOpen(false);
+  }, []);
+
+  const applyTextAiResult = useCallback(
+    (mode: 'replace' | 'append') => {
+      if (!aiActionResult) return;
+      setNotes((prev) => (mode === 'replace' ? aiActionResult : prev + (prev ? '\n\n' : '') + aiActionResult));
+      closeTextAiModal();
+    },
+    [aiActionResult, closeTextAiModal],
+  );
+
+  // ─── AI: subtasks suggester ───
+  const runSuggestSubtasks = useCallback(async () => {
+    const descriptor = `${title.trim()}${notes.trim() ? `\n\n${notes.trim()}` : ''}`.trim();
+    if (descriptor.length < 3) {
+      Alert.alert('Need more context', 'Add a task title (and optionally notes) first so the AI has something to break down.');
+      return;
+    }
+    aiAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    aiAbortRef.current = ctrl;
+    setSubtaskLoading(true);
+    setSubtaskError(null);
+    setSubtaskSuggestions(null);
+    setSelectedSuggestions(new Set());
+    try {
+      const out = await generateSubtasks(settings.geminiApiKey, descriptor, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      setSubtaskSuggestions(out.subtasks);
+      // Preselect all by default
+      setSelectedSuggestions(new Set(out.subtasks.map((_, i) => i)));
+    } catch (e: any) {
+      if (e?.name === 'AbortError') return;
+      const msg = e instanceof GeminiError ? e.message : 'Something went wrong. Please try again.';
+      setSubtaskError(msg);
+    } finally {
+      setSubtaskLoading(false);
+    }
+  }, [title, notes, settings.geminiApiKey]);
+
+  const closeSubtaskModal = useCallback(() => {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    setSubtaskLoading(false);
+    setSubtaskSuggestions(null);
+    setSubtaskError(null);
+    setSelectedSuggestions(new Set());
+  }, []);
+
+  const toggleSuggestion = useCallback((idx: number) => {
+    setSelectedSuggestions((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }, []);
+
+  const acceptSelectedSuggestions = useCallback(() => {
+    if (!subtaskSuggestions) return;
+    const picks = subtaskSuggestions.filter((_, i) => selectedSuggestions.has(i));
+    picks.forEach((title) => handleAddSub(title));
+    closeSubtaskModal();
+  }, [subtaskSuggestions, selectedSuggestions, handleAddSub, closeSubtaskModal]);
+
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
     header: {
@@ -459,6 +605,216 @@ export function TaskEditorScreen() {
       ...theme.typography.button,
       color: theme.colors.error,
     },
+
+    // ── AI Assistant card (mirrors NoteEditorScreen) ─────────────
+    aiSectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.md,
+      marginBottom: theme.spacing.sm,
+    },
+    aiSectionTitleIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    aiSectionTitle: {
+      ...theme.typography.label,
+      color: theme.colors.text,
+      fontWeight: '700',
+      fontSize: 14,
+      letterSpacing: 0.3,
+    },
+    aiMetaCard: {
+      borderRadius: 20,
+      backgroundColor: theme.colors.cardBg,
+      overflow: 'hidden',
+      ...theme.shadows.card,
+    },
+    aiCardSection: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.lg,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.colors.border,
+    },
+    aiCardSectionLast: { borderBottomWidth: 0 },
+    aiActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+    aiActionBtn: {
+      flexGrow: 1,
+      flexBasis: '48%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      paddingVertical: 12,
+      paddingHorizontal: theme.spacing.md,
+      borderRadius: theme.borderRadius.lg,
+      backgroundColor: '#7C3AED10',
+      borderWidth: 1,
+      borderColor: '#7C3AED25',
+    },
+    aiActionIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: 9,
+      backgroundColor: '#7C3AED20',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    aiActionLabel: {
+      ...theme.typography.bodySmall,
+      color: '#4C1D95',
+      fontWeight: '700',
+      flex: 1,
+    },
+    aiToneRowCard: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.sm,
+    },
+    aiToneChipCard: {
+      paddingVertical: 6,
+      paddingHorizontal: theme.spacing.md,
+      backgroundColor: theme.colors.inputBg,
+      borderRadius: theme.borderRadius.full,
+    },
+    aiToneChipCardText: {
+      ...theme.typography.bodySmall,
+      color: theme.colors.text,
+      fontWeight: '500',
+    },
+
+    // ── Suggest subtasks button ───────────────────────────────────
+    suggestBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      marginTop: theme.spacing.sm,
+      paddingVertical: 10,
+      borderRadius: theme.borderRadius.lg,
+      backgroundColor: '#7C3AED10',
+      borderWidth: 1,
+      borderColor: '#7C3AED25',
+    },
+    suggestBtnText: {
+      ...theme.typography.bodySmall,
+      color: '#7C3AED',
+      fontWeight: '700',
+    },
+
+    // ── AI result modal (shared shape) ────────────────────────────
+    aiOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      justifyContent: 'center',
+      padding: theme.spacing.lg,
+    },
+    aiCard: {
+      backgroundColor: theme.colors.cardBg,
+      borderRadius: 20,
+      overflow: 'hidden',
+      maxHeight: '85%',
+    },
+    aiHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      padding: theme.spacing.lg,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.colors.border,
+    },
+    aiHeaderTitle: {
+      ...theme.typography.title,
+      fontSize: 16,
+      fontWeight: '700',
+      color: theme.colors.text,
+      flex: 1,
+    },
+    aiBody: {
+      padding: theme.spacing.lg,
+      minHeight: 120,
+    },
+    aiBodyText: {
+      ...theme.typography.body,
+      color: theme.colors.text,
+      lineHeight: 22,
+    },
+    aiLoading: {
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      paddingVertical: theme.spacing.xl,
+    },
+    aiLoadingText: {
+      ...theme.typography.bodySmall,
+      color: theme.colors.textMuted,
+    },
+    aiErrorWrap: {
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      paddingVertical: theme.spacing.md,
+    },
+    aiErrorIcon: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.warningLight,
+    },
+    aiErrorText: {
+      ...theme.typography.body,
+      color: theme.colors.text,
+      textAlign: 'center',
+      lineHeight: 22,
+      paddingHorizontal: theme.spacing.md,
+    },
+    aiActions: {
+      flexDirection: 'row',
+      gap: theme.spacing.sm,
+      padding: theme.spacing.lg,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.colors.border,
+    },
+    aiBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      borderRadius: theme.borderRadius.lg,
+    },
+    aiBtnPrimary: { backgroundColor: theme.colors.primary },
+    aiBtnPrimaryText: { ...theme.typography.button, color: '#FFF' },
+    aiBtnSecondary: { backgroundColor: theme.colors.inputBg },
+    aiBtnSecondaryText: { ...theme.typography.button, color: theme.colors.text, fontWeight: '600' },
+
+    // ── Subtask suggestion row ────────────────────────────────────
+    suggestionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      paddingVertical: 10,
+      paddingHorizontal: theme.spacing.sm,
+      borderRadius: theme.borderRadius.md,
+      backgroundColor: theme.colors.inputBg,
+      marginBottom: 6,
+    },
+    suggestionCheckbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    suggestionCheckboxOn: { backgroundColor: theme.colors.primary },
+    suggestionText: { ...theme.typography.body, color: theme.colors.text, flex: 1 },
+    suggestionTextDim: { color: theme.colors.textMuted, textDecorationLine: 'line-through' },
   }), [theme, insets]);
 
   return (
@@ -618,6 +974,78 @@ export function TaskEditorScreen() {
           />
         </View>
 
+        {/* ── AI Assistant (matches note editor) ── */}
+        <View style={styles.aiSectionTitleRow}>
+          <View style={[styles.aiSectionTitleIcon, { backgroundColor: '#7C3AED15' }]}>
+            <Ionicons name="color-wand-outline" size={16} color="#7C3AED" />
+          </View>
+          <Text style={styles.aiSectionTitle}>AI Assistant</Text>
+        </View>
+        <View style={styles.aiMetaCard}>
+          <View style={[styles.aiCardSection, styles.aiCardSectionLast]}>
+            <View style={styles.aiActionsGrid}>
+              <TouchableOpacity
+                style={styles.aiActionBtn}
+                activeOpacity={0.8}
+                onPress={() => runTextAiAction('Summary', (signal) => summarizeNote(settings.geminiApiKey, notes, signal))}
+              >
+                <View style={styles.aiActionIcon}>
+                  <Ionicons name="document-text-outline" size={16} color="#7C3AED" />
+                </View>
+                <Text style={styles.aiActionLabel}>Summarize</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.aiActionBtn}
+                activeOpacity={0.8}
+                onPress={() => runTextAiAction('Rewrite', (signal) => rewriteNote(settings.geminiApiKey, notes, signal))}
+              >
+                <View style={styles.aiActionIcon}>
+                  <Ionicons name="create-outline" size={16} color="#7C3AED" />
+                </View>
+                <Text style={styles.aiActionLabel}>Rewrite</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.aiActionBtn}
+                activeOpacity={0.8}
+                onPress={() => runTextAiAction('Grammar fix', (signal) => fixGrammar(settings.geminiApiKey, notes, signal))}
+              >
+                <View style={styles.aiActionIcon}>
+                  <Ionicons name="checkmark-done-outline" size={16} color="#7C3AED" />
+                </View>
+                <Text style={styles.aiActionLabel}>Fix grammar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.aiActionBtn}
+                activeOpacity={0.8}
+                onPress={() => setAiToneMenuOpen((v) => !v)}
+              >
+                <View style={styles.aiActionIcon}>
+                  <Ionicons name="color-palette-outline" size={16} color="#7C3AED" />
+                </View>
+                <Text style={styles.aiActionLabel}>Change tone</Text>
+              </TouchableOpacity>
+            </View>
+            {aiToneMenuOpen && (
+              <View style={styles.aiToneRowCard}>
+                {(['formal', 'casual', 'friendly', 'concise'] as ToneStyle[]).map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={styles.aiToneChipCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setAiToneMenuOpen(false);
+                      const label = `Tone: ${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+                      runTextAiAction(label, (signal) => shiftTone(settings.geminiApiKey, notes, t, signal));
+                    }}
+                  >
+                    <Text style={styles.aiToneChipCardText}>{t.charAt(0).toUpperCase()}{t.slice(1)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Sub-tasks */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Sub-tasks</Text>
@@ -629,7 +1057,22 @@ export function TaskEditorScreen() {
               onDelete={handleDeleteSub}
             />
           </View>
+          <TouchableOpacity
+            style={styles.suggestBtn}
+            activeOpacity={0.8}
+            onPress={runSuggestSubtasks}
+          >
+            <Ionicons name="sparkles" size={14} color="#7C3AED" />
+            <Text style={styles.suggestBtnText}>Suggest subtasks with AI</Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Time Tracking — only for existing tasks (needs an id) */}
+        {!isNew && existing && (
+          <View style={styles.section}>
+            <TaskTimer taskId={existing.id} />
+          </View>
+        )}
 
         {/* Delete */}
         {!isNew && (
@@ -662,6 +1105,183 @@ export function TaskEditorScreen() {
         onSelect={handleTuneSelect}
         onClose={() => setShowTunePicker(false)}
       />
+
+      {/* ── AI text-result modal (summarize/rewrite/grammar/tone) ── */}
+      <Modal
+        visible={aiActionLabel !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeTextAiModal}
+      >
+        <Pressable style={styles.aiOverlay} onPress={closeTextAiModal}>
+          <Pressable style={styles.aiCard} onPress={() => {}}>
+            <View style={styles.aiHeader}>
+              <Ionicons name="sparkles" size={18} color="#7C3AED" />
+              <Text style={styles.aiHeaderTitle}>{aiActionLabel}</Text>
+              <TouchableOpacity onPress={closeTextAiModal} hitSlop={10}>
+                <Ionicons name="close" size={22} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.aiBody}>
+              {aiActionLoading ? (
+                <View style={styles.aiLoading}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                  <Text style={styles.aiLoadingText}>Thinking…</Text>
+                </View>
+              ) : aiActionError ? (
+                <View style={styles.aiErrorWrap}>
+                  <View style={styles.aiErrorIcon}>
+                    <Ionicons name="alert-circle-outline" size={28} color={theme.colors.warning} />
+                  </View>
+                  <Text style={styles.aiErrorText}>{aiActionError}</Text>
+                </View>
+              ) : (
+                <Text style={styles.aiBodyText}>{aiActionResult}</Text>
+              )}
+            </ScrollView>
+            {!aiActionLoading && aiActionResult && (
+              <View style={styles.aiActions}>
+                <TouchableOpacity
+                  style={[styles.aiBtn, styles.aiBtnSecondary]}
+                  onPress={() => applyTextAiResult('append')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.aiBtnSecondaryText}>Append</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.aiBtn, styles.aiBtnPrimary]}
+                  onPress={() => applyTextAiResult('replace')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.aiBtnPrimaryText}>Replace</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {!aiActionLoading && aiActionError && (
+              <View style={styles.aiActions}>
+                <TouchableOpacity
+                  style={[styles.aiBtn, styles.aiBtnSecondary]}
+                  onPress={closeTextAiModal}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.aiBtnSecondaryText}>Close</Text>
+                </TouchableOpacity>
+                {aiActionRetryable && (
+                  <TouchableOpacity
+                    style={[styles.aiBtn, styles.aiBtnPrimary]}
+                    onPress={retryTextAiAction}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="refresh" size={16} color="#FFF" />
+                    <Text style={[styles.aiBtnPrimaryText, { marginLeft: 6 }]}>Try again</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── AI subtask-suggestions modal ── */}
+      <Modal
+        visible={subtaskLoading || subtaskSuggestions !== null || subtaskError !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeSubtaskModal}
+      >
+        <Pressable style={styles.aiOverlay} onPress={closeSubtaskModal}>
+          <Pressable style={styles.aiCard} onPress={() => {}}>
+            <View style={styles.aiHeader}>
+              <Ionicons name="sparkles" size={18} color="#7C3AED" />
+              <Text style={styles.aiHeaderTitle}>Suggested subtasks</Text>
+              <TouchableOpacity onPress={closeSubtaskModal} hitSlop={10}>
+                <Ionicons name="close" size={22} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.aiBody}>
+              {subtaskLoading ? (
+                <View style={styles.aiLoading}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                  <Text style={styles.aiLoadingText}>Breaking it down…</Text>
+                </View>
+              ) : subtaskError ? (
+                <View style={styles.aiErrorWrap}>
+                  <View style={styles.aiErrorIcon}>
+                    <Ionicons name="alert-circle-outline" size={28} color={theme.colors.warning} />
+                  </View>
+                  <Text style={styles.aiErrorText}>{subtaskError}</Text>
+                </View>
+              ) : subtaskSuggestions ? (
+                <>
+                  {subtaskSuggestions.map((s, i) => {
+                    const on = selectedSuggestions.has(i);
+                    return (
+                      <TouchableOpacity
+                        key={i}
+                        style={styles.suggestionRow}
+                        onPress={() => toggleSuggestion(i)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.suggestionCheckbox, on && styles.suggestionCheckboxOn]}>
+                          {on && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                        </View>
+                        <Text style={[styles.suggestionText, !on && styles.suggestionTextDim]}>{s}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              ) : null}
+            </ScrollView>
+            {!subtaskLoading && subtaskSuggestions && (
+              <View style={styles.aiActions}>
+                <TouchableOpacity
+                  style={[styles.aiBtn, styles.aiBtnSecondary]}
+                  onPress={closeSubtaskModal}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.aiBtnSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.aiBtn,
+                    selectedSuggestions.size > 0 ? styles.aiBtnPrimary : styles.aiBtnSecondary,
+                  ]}
+                  onPress={acceptSelectedSuggestions}
+                  disabled={selectedSuggestions.size === 0}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={
+                      selectedSuggestions.size > 0 ? styles.aiBtnPrimaryText : styles.aiBtnSecondaryText
+                    }
+                  >
+                    Add {selectedSuggestions.size || ''}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {!subtaskLoading && subtaskError && (
+              <View style={styles.aiActions}>
+                <TouchableOpacity
+                  style={[styles.aiBtn, styles.aiBtnSecondary]}
+                  onPress={closeSubtaskModal}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.aiBtnSecondaryText}>Close</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.aiBtn, styles.aiBtnPrimary]}
+                  onPress={runSuggestSubtasks}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="refresh" size={16} color="#FFF" />
+                  <Text style={[styles.aiBtnPrimaryText, { marginLeft: 6 }]}>Try again</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }

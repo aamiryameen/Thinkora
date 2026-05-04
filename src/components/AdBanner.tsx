@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 import { AD_UNITS } from '../services/ads';
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function AdBanner({ size = BannerAdSize.ADAPTIVE_BANNER, style }: Props) {
+  const insets = useSafeAreaInsets();
   const [loaded, setLoaded] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const retryCount = useRef(0);
@@ -41,7 +43,7 @@ export function AdBanner({ size = BannerAdSize.ADAPTIVE_BANNER, style }: Props) 
   }, []);
 
   return (
-    <View style={[styles.container, !loaded && styles.hidden, style]}>
+    <View style={[styles.container, { bottom: insets.bottom }, !loaded && styles.hidden, style]}>
       <BannerAd
         key={`ad-${retryKey}`}
         unitId={AD_UNITS.banner}
@@ -59,7 +61,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
     alignItems: 'center',
     width: '100%',
     backgroundColor: 'transparent',

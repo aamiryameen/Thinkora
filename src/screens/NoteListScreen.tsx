@@ -155,7 +155,7 @@ export function NoteListScreen() {
         },
         filterChipText: { ...theme.typography.caption, color: theme.colors.textSecondary, fontWeight: '500' },
         filterChipTextOn: { color: theme.colors.primaryDark, fontWeight: '600' },
-        list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: 100 },
+        list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: 180 },
         noteCard: {
           backgroundColor: theme.colors.cardBg,
           borderRadius: theme.borderRadius.lg,
@@ -238,8 +238,8 @@ export function NoteListScreen() {
         fab: {
           position: 'absolute',
           right: theme.spacing.xl,
-          // Above the AdBanner (~60dp) + safe margin
-          bottom: theme.spacing.xxl + 24 + 60,
+          // Above the floating tab bar (~76dp) + AdBanner (~60dp) + system nav inset
+          bottom: insets.bottom + 60 + 76 + 24,
           width: 58,
           height: 58,
           borderRadius: 29,
@@ -250,7 +250,7 @@ export function NoteListScreen() {
           zIndex: 10,
         },
       }),
-    [theme, insets.top]
+    [theme, insets.top, insets.bottom]
   );
 
   const openNote = useCallback(

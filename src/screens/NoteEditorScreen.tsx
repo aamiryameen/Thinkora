@@ -13,6 +13,7 @@ import {
   NativeModules,
   DeviceEventEmitter,
   PermissionsAndroid,
+  ActivityIndicator,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -23,6 +24,15 @@ import { SketchCanvasModal } from '../components/SketchCanvas';
 import { Icon } from '../components/Icons';
 import { useApp } from '../context/AppContext';
 import { suggestTasksFromNote, autoCategorizeNote } from '../services/aiService';
+import {
+  summarizeNote,
+  rewriteNote,
+  fixGrammar,
+  shiftTone,
+  GeminiError,
+  type ToneStyle,
+  type AiCallResult,
+} from '../services/geminiService';
 import {
   UNDO_HISTORY_MAX,
   DEFAULT_NOTE_TITLE,
@@ -76,6 +86,7 @@ export function NoteEditorScreen() {
     tasks,
     addTask,
     setNoteColor,
+    settings,
   } = useApp();
 
   const note = noteId ? getNote(noteId) : null;
@@ -172,6 +183,18 @@ export function NoteEditorScreen() {
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
   const [noteColor, setNoteColorState] = useState<string | null>(note?.color ?? null);
   const [showAISuggestions, setShowAISuggestions] = useState(false);
+  /** Gemini action result modal state. */
+  const [aiActionLabel, setAiActionLabel] = useState<string | null>(null);
+  const [aiActionLoading, setAiActionLoading] = useState(false);
+  const [aiActionResult, setAiActionResult] = useState<string | null>(null);
+  const [aiActionError, setAiActionError] = useState<string | null>(null);
+  const [aiActionRetryable, setAiActionRetryable] = useState(false);
+  const [toneMenuOpen, setToneMenuOpen] = useState(false);
+  const aiAbortRef = useRef<AbortController | null>(null);
+  const lastAiRunRef = useRef<{
+    label: string;
+    fn: (signal: AbortSignal) => Promise<AiCallResult>;
+  } | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   /** On Android we use date then time (two steps) to avoid crash when dismissing mode="datetime". */
   const [pickerStep, setPickerStep] = useState<'date' | 'time'>('date');
@@ -560,10 +583,42 @@ export function NoteEditorScreen() {
 
   const handleShare = useCallback(async () => {
     const shareText = `${title ? title + '\n\n' : ''}${plainText}`;
-    try {
-      await Share.share({ message: shareText, title: title || 'Note' });
-    } catch (_) {}
-  }, [title, plainText]);
+    if (!noteId) {
+      // Note not saved yet — fall back to plain text share
+      try { await Share.share({ message: shareText, title: title || 'Note' }); } catch (_) {}
+      return;
+    }
+    Alert.alert('Share Note', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'As Text',
+        onPress: async () => {
+          try { await Share.share({ message: shareText, title: title || 'Note' }); } catch (_) {}
+        },
+      },
+      {
+        text: 'As Beautiful Card',
+        onPress: () => {
+          (navigation as any).navigate('ShareNoteCard', { noteId });
+        },
+      },
+      {
+        text: 'As Public Link',
+        onPress: async () => {
+          try {
+            const { createPublicShare } = require('../services/publicShareService');
+            const result = await createPublicShare(title || 'Untitled', plainText);
+            await Share.share({
+              message: `${title || 'Note'}\n\n${result.url}`,
+              title: title || 'Note',
+            });
+          } catch (e: any) {
+            Alert.alert('Could Not Create Link', e?.message ?? 'Try again later.');
+          }
+        },
+      },
+    ]);
+  }, [title, plainText, noteId, navigation]);
 
   const aiSuggestions = useMemo(() => {
     if (!plainText.trim()) return [];
@@ -581,6 +636,77 @@ export function NoteEditorScreen() {
     const suggested = autoCategorizeNote(fakeNote as any);
     if (suggested !== 'none' && suggested !== 'all') setCategory(suggested);
   }, [noteId, title, content, plainText, category, attachments]);
+
+  const runGeminiAction = useCallback(
+    async (label: string, fn: (signal: AbortSignal) => Promise<AiCallResult>) => {
+      const text = plainText.trim();
+      if (!text) {
+        Alert.alert('Nothing to process', 'Write something in the note first.');
+        return;
+      }
+      lastAiRunRef.current = { label, fn };
+      aiAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      aiAbortRef.current = ctrl;
+      setAiActionLabel(label);
+      setAiActionLoading(true);
+      setAiActionResult(null);
+      setAiActionError(null);
+      setAiActionRetryable(false);
+      try {
+        const out = await fn(ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        setAiActionResult(out.text);
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return;
+        const msg = e instanceof GeminiError ? e.message : 'Something went wrong. Please try again.';
+        const canRetry = e instanceof GeminiError ? e.isRetryable : true;
+        setAiActionError(msg);
+        setAiActionRetryable(canRetry);
+      } finally {
+        setAiActionLoading(false);
+      }
+    },
+    [plainText],
+  );
+
+  const retryAiAction = useCallback(() => {
+    const last = lastAiRunRef.current;
+    if (!last) return;
+    runGeminiAction(last.label, last.fn);
+  }, [runGeminiAction]);
+
+  const closeAiAction = useCallback(() => {
+    aiAbortRef.current?.abort();
+    aiAbortRef.current = null;
+    setAiActionLabel(null);
+    setAiActionLoading(false);
+    setAiActionResult(null);
+    setAiActionError(null);
+    setAiActionRetryable(false);
+    setToneMenuOpen(false);
+  }, []);
+
+  const applyAiResult = useCallback(
+    (mode: 'replace' | 'append') => {
+      if (!aiActionResult) return;
+      const resultHtml = aiActionResult
+        .split(/\n\n+/)
+        .map((p) => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
+        .join('');
+      if (mode === 'replace') {
+        handleContentChange(resultHtml, aiActionResult);
+        setContentRestoreKey((k) => k + 1);
+      } else {
+        const appendedPlain = plainText + '\n\n' + aiActionResult;
+        const appendedHtml = (content || '') + resultHtml;
+        handleContentChange(appendedHtml, appendedPlain);
+        setContentRestoreKey((k) => k + 1);
+      }
+      closeAiAction();
+    },
+    [aiActionResult, content, plainText, handleContentChange, closeAiAction],
+  );
 
   const categories: SmartCategory[] = ['work', 'personal', 'ideas', 'todos', 'none'];
 
@@ -602,7 +728,7 @@ export function NoteEditorScreen() {
         header: {
           paddingHorizontal: theme.spacing.lg,
           paddingTop: insets.top + theme.spacing.sm,
-          paddingBottom: theme.spacing.md,
+          paddingBottom: theme.spacing.sm,
           backgroundColor: theme.colors.surface,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: theme.colors.border,
@@ -611,47 +737,21 @@ export function NoteEditorScreen() {
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: theme.spacing.xs,
-          gap: theme.spacing.sm,
-        },
-        headerLeft: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: theme.spacing.sm,
+          gap: theme.spacing.md,
         },
         backBtn: {
-          width: 36,
-          height: 36,
-          borderRadius: 10,
+          width: 40,
+          height: 40,
+          borderRadius: 12,
           alignItems: 'center',
           justifyContent: 'center',
           backgroundColor: theme.colors.inputBg,
         },
-        headerActions: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, flexShrink: 1 },
-        saveBtn: {
-          backgroundColor: theme.colors.primary,
-          borderRadius: theme.borderRadius.lg,
-          paddingVertical: theme.spacing.sm,
-          paddingHorizontal: theme.spacing.lg,
-        },
-        saveBtnText: {
-          ...theme.typography.button,
-          color: '#FFF',
-        },
-        headerIconBtn: {
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: theme.colors.inputBg,
-        },
-        headerIconBtnDisabled: { opacity: 0.25 },
         headerMeta: {
+          flex: 1,
           flexDirection: 'row',
           alignItems: 'center',
           gap: theme.spacing.sm,
-          marginTop: theme.spacing.xs,
         },
         categoryBadge: {
           flexDirection: 'row',
@@ -675,41 +775,82 @@ export function NoteEditorScreen() {
           ...theme.typography.caption,
           color: theme.colors.textMuted,
         },
+        saveBtn: {
+          backgroundColor: theme.colors.primary,
+          borderRadius: theme.borderRadius.lg,
+          paddingVertical: 10,
+          paddingHorizontal: theme.spacing.lg,
+          ...theme.shadows.card,
+        },
+        saveBtnText: {
+          ...theme.typography.button,
+          color: '#FFF',
+        },
+        toolbarRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          gap: theme.spacing.xs,
+          marginTop: theme.spacing.sm,
+          paddingHorizontal: theme.spacing.xxs,
+        },
+        headerIconBtn: {
+          width: 38,
+          height: 38,
+          borderRadius: 12,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.colors.inputBg,
+        },
+        headerIconBtnDisabled: { opacity: 0.25 },
 
         /* ── Scroll / cards ──────────────────────── */
         scroll: { flex: 1 },
         editorCard: {
           marginHorizontal: theme.spacing.lg,
           marginTop: theme.spacing.lg,
-          borderRadius: theme.borderRadius.xl,
+          borderRadius: 20,
           backgroundColor: theme.colors.cardBg,
           overflow: 'hidden',
+          paddingBottom: theme.spacing.md,
           ...theme.shadows.card,
         },
 
-        /* ── Section title (like Dashboard "Features") ── */
-        sectionTitle: {
-          ...theme.typography.overline,
-          color: theme.colors.textMuted,
-          textTransform: 'uppercase',
-          letterSpacing: 1,
+        /* ── Section header row (icon tile + label) ── */
+        sectionTitleRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          marginTop: theme.spacing.xl,
           marginBottom: theme.spacing.sm,
-          marginLeft: theme.spacing.xs,
-          marginTop: theme.spacing.lg,
           marginHorizontal: theme.spacing.lg,
+        },
+        sectionTitleIcon: {
+          width: 28,
+          height: 28,
+          borderRadius: 9,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        sectionTitle: {
+          ...theme.typography.label,
+          color: theme.colors.text,
+          fontWeight: '700',
+          fontSize: 14,
+          letterSpacing: 0.3,
         },
 
         /* ── Meta card ───────────────────────────── */
         metaCard: {
           marginHorizontal: theme.spacing.lg,
-          borderRadius: theme.borderRadius.xl,
+          borderRadius: 20,
           backgroundColor: theme.colors.cardBg,
           overflow: 'hidden',
           ...theme.shadows.card,
         },
         section: {
           paddingHorizontal: theme.spacing.lg,
-          paddingVertical: theme.spacing.md,
+          paddingVertical: theme.spacing.lg,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: theme.colors.border,
         },
@@ -906,6 +1047,95 @@ export function NoteEditorScreen() {
         aiSuggItemText: { ...theme.typography.body, color: theme.colors.text, flex: 1 },
         aiSuggAddBtn: { backgroundColor: '#7C3AED20', borderRadius: theme.borderRadius.full, paddingHorizontal: theme.spacing.sm, paddingVertical: 4 },
         aiSuggAddText: { ...theme.typography.caption, color: '#7C3AED', fontWeight: '700' },
+
+        /* AI actions grid inside the note editor */
+        aiActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+        aiActionBtn: {
+          flexGrow: 1,
+          flexBasis: '48%',
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          paddingVertical: 12,
+          paddingHorizontal: theme.spacing.md,
+          borderRadius: theme.borderRadius.lg,
+          backgroundColor: '#7C3AED10',
+          borderWidth: 1,
+          borderColor: '#7C3AED25',
+        },
+        aiActionIcon: {
+          width: 28,
+          height: 28,
+          borderRadius: 9,
+          backgroundColor: '#7C3AED20',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        aiActionLabel: { ...theme.typography.bodySmall, color: '#4C1D95', fontWeight: '700', flex: 1 },
+
+        /* AI result modal */
+        aiResultOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: theme.spacing.lg },
+        aiResultCard: {
+          backgroundColor: theme.colors.cardBg,
+          borderRadius: 20,
+          overflow: 'hidden',
+          maxHeight: '85%',
+        },
+        aiResultHeader: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          padding: theme.spacing.lg,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: theme.colors.border,
+        },
+        aiResultTitle: { ...theme.typography.title, fontSize: 16, fontWeight: '700', color: theme.colors.text, flex: 1 },
+        aiResultBody: { padding: theme.spacing.lg, minHeight: 120 },
+        aiResultText: { ...theme.typography.body, color: theme.colors.text, lineHeight: 22 },
+        aiResultLoading: { alignItems: 'center', justifyContent: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.xl },
+        aiResultLoadingText: { ...theme.typography.bodySmall, color: theme.colors.textMuted },
+        aiResultError: { ...theme.typography.body, color: theme.colors.error, lineHeight: 22 },
+        aiResultErrorWrap: {
+          alignItems: 'center',
+          gap: theme.spacing.sm,
+          paddingVertical: theme.spacing.md,
+        },
+        aiResultErrorIcon: {
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: theme.colors.warningLight,
+        },
+        aiResultErrorText: {
+          ...theme.typography.body,
+          color: theme.colors.text,
+          textAlign: 'center',
+          lineHeight: 22,
+          paddingHorizontal: theme.spacing.md,
+        },
+        aiResultActions: {
+          flexDirection: 'row',
+          gap: theme.spacing.sm,
+          padding: theme.spacing.lg,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: theme.colors.border,
+        },
+        aiResultBtn: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingVertical: 12,
+          borderRadius: theme.borderRadius.lg,
+        },
+        aiResultBtnPrimary: { backgroundColor: theme.colors.primary },
+        aiResultBtnPrimaryText: { ...theme.typography.button, color: '#FFF' },
+        aiResultBtnSecondary: { backgroundColor: theme.colors.inputBg },
+        aiResultBtnSecondaryText: { ...theme.typography.button, color: theme.colors.text, fontWeight: '600' },
+
+        /* Tone chooser chips */
+        toneChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
       }),
     [theme, insets.top, insets.bottom]
   );
@@ -916,51 +1146,52 @@ export function NoteEditorScreen() {
     <View style={styles.container}>
       {/* ── Header ── */}
       <View style={styles.header}>
+        {/* Top row: back, category + date, Save */}
         <View style={styles.headerTopRow}>
           <TouchableOpacity style={styles.backBtn} onPress={handleBack} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
             <Icon name="back" size={22} />
           </TouchableOpacity>
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={[styles.headerIconBtn, historyIndex <= 0 && styles.headerIconBtnDisabled]} onPress={handleUndo} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7} disabled={historyIndex <= 0}>
-              <Icon name="undo" size={20} color={theme.colors.icon} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.headerIconBtn, historyIndex >= history.length - 1 && styles.headerIconBtnDisabled]} onPress={handleRedo} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7} disabled={historyIndex >= history.length - 1}>
-              <Icon name="redo" size={20} color={theme.colors.icon} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerIconBtn} onPress={showAttachMenu} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
-              <Icon name="attach" size={20} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.headerIconBtn, noteColor ? { backgroundColor: noteColor, borderWidth: 2, borderColor: theme.colors.border } : null]} onPress={() => setColorPickerVisible(true)} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
-              <Ionicons name="color-palette-outline" size={20} color={noteColor ? '#1a1a2e' : theme.colors.icon} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerIconBtn} onPress={handleShare} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
-              <Ionicons name="share-outline" size={20} color={theme.colors.icon} />
-            </TouchableOpacity>
-            {!isNew && (
-              <TouchableOpacity style={styles.headerIconBtn} onPress={confirmDelete} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
-                <Icon name="delete" size={20} color={theme.colors.error} />
-              </TouchableOpacity>
-            )}
+          <View style={styles.headerMeta}>
+            <View style={[styles.categoryBadge, { backgroundColor: catMeta.bg }]}>
+              <Text style={styles.categoryGridEmoji}>{catMeta.emoji}</Text>
+              <Text style={[styles.categoryBadgeText, { color: catMeta.color }]}>
+                {category === 'none' ? 'Note' : category.charAt(0).toUpperCase() + category.slice(1)}
+              </Text>
+            </View>
+            <View style={styles.headerDot} />
+            <Text style={styles.headerDateText} numberOfLines={1}>
+              {note?.updatedAt
+                ? new Date(note.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                : 'New note'}
+            </Text>
           </View>
           <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
             <Text style={styles.saveBtnText}>Save</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Category badge + date hint below top row */}
-        <View style={styles.headerMeta}>
-          <View style={[styles.categoryBadge, { backgroundColor: catMeta.bg }]}>
-            <Text style={styles.categoryGridEmoji}>{catMeta.emoji}</Text>
-            <Text style={[styles.categoryBadgeText, { color: catMeta.color }]}>
-              {category === 'none' ? 'Note' : category.charAt(0).toUpperCase() + category.slice(1)}
-            </Text>
-          </View>
-          <View style={styles.headerDot} />
-          <Text style={styles.headerDateText}>
-            {note?.updatedAt
-              ? new Date(note.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-              : 'New note'}
-          </Text>
+        {/* Secondary toolbar */}
+        <View style={styles.toolbarRow}>
+          <TouchableOpacity style={[styles.headerIconBtn, historyIndex <= 0 && styles.headerIconBtnDisabled]} onPress={handleUndo} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7} disabled={historyIndex <= 0}>
+            <Icon name="undo" size={20} color={theme.colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.headerIconBtn, historyIndex >= history.length - 1 && styles.headerIconBtnDisabled]} onPress={handleRedo} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7} disabled={historyIndex >= history.length - 1}>
+            <Icon name="redo" size={20} color={theme.colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerIconBtn} onPress={showAttachMenu} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+            <Icon name="attach" size={20} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.headerIconBtn, noteColor ? { backgroundColor: noteColor, borderWidth: 2, borderColor: theme.colors.border } : null]} onPress={() => setColorPickerVisible(true)} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+            <Ionicons name="color-palette-outline" size={20} color={noteColor ? '#1a1a2e' : theme.colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerIconBtn} onPress={handleShare} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+            <Ionicons name="share-outline" size={20} color={theme.colors.icon} />
+          </TouchableOpacity>
+          {!isNew && (
+            <TouchableOpacity style={styles.headerIconBtn} onPress={confirmDelete} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+              <Icon name="delete" size={20} color={theme.colors.error} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -985,7 +1216,12 @@ export function NoteEditorScreen() {
         {/* ── Tags section ── */}
         {tags.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>Tags</Text>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionTitleIcon, { backgroundColor: '#06B6D415' }]}>
+                <Ionicons name="pricetag-outline" size={16} color="#06B6D4" />
+              </View>
+              <Text style={styles.sectionTitle}>Tags</Text>
+            </View>
             <View style={styles.metaCard}>
               <View style={[styles.section, styles.sectionLast]}>
                 <View style={styles.chipRow}>
@@ -1003,7 +1239,12 @@ export function NoteEditorScreen() {
         {/* ── AI Task Suggestions ── */}
         {aiSuggestions.length > 0 && (
           <>
-            <Text style={styles.sectionTitle}>AI Suggestions</Text>
+            <View style={styles.sectionTitleRow}>
+              <View style={[styles.sectionTitleIcon, { backgroundColor: '#7C3AED15' }]}>
+                <Ionicons name="sparkles" size={16} color="#7C3AED" />
+              </View>
+              <Text style={styles.sectionTitle}>AI Suggestions</Text>
+            </View>
             <View style={styles.aiSuggCard}>
               <TouchableOpacity style={styles.aiSuggHeader} onPress={() => setShowAISuggestions((v) => !v)} activeOpacity={0.8}>
                 <Ionicons name="sparkles" size={16} color="#7C3AED" />
@@ -1023,8 +1264,85 @@ export function NoteEditorScreen() {
           </>
         )}
 
+        {/* ── AI Assistant (Gemini) ── */}
+        <View style={styles.sectionTitleRow}>
+          <View style={[styles.sectionTitleIcon, { backgroundColor: '#7C3AED15' }]}>
+            <Ionicons name="color-wand-outline" size={16} color="#7C3AED" />
+          </View>
+          <Text style={styles.sectionTitle}>AI Assistant</Text>
+        </View>
+        <View style={styles.metaCard}>
+          <View style={[styles.section, styles.sectionLast]}>
+            <View style={styles.aiActionsGrid}>
+              <TouchableOpacity
+                style={styles.aiActionBtn}
+                activeOpacity={0.8}
+                onPress={() => runGeminiAction('Summary', (signal) => summarizeNote(settings.geminiApiKey, plainText, signal))}
+              >
+                <View style={styles.aiActionIcon}>
+                  <Ionicons name="document-text-outline" size={16} color="#7C3AED" />
+                </View>
+                <Text style={styles.aiActionLabel}>Summarize</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.aiActionBtn}
+                activeOpacity={0.8}
+                onPress={() => runGeminiAction('Rewrite', (signal) => rewriteNote(settings.geminiApiKey, plainText, signal))}
+              >
+                <View style={styles.aiActionIcon}>
+                  <Ionicons name="create-outline" size={16} color="#7C3AED" />
+                </View>
+                <Text style={styles.aiActionLabel}>Rewrite</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.aiActionBtn}
+                activeOpacity={0.8}
+                onPress={() => runGeminiAction('Grammar fix', (signal) => fixGrammar(settings.geminiApiKey, plainText, signal))}
+              >
+                <View style={styles.aiActionIcon}>
+                  <Ionicons name="checkmark-done-outline" size={16} color="#7C3AED" />
+                </View>
+                <Text style={styles.aiActionLabel}>Fix grammar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.aiActionBtn}
+                activeOpacity={0.8}
+                onPress={() => setToneMenuOpen((v) => !v)}
+              >
+                <View style={styles.aiActionIcon}>
+                  <Ionicons name="color-palette-outline" size={16} color="#7C3AED" />
+                </View>
+                <Text style={styles.aiActionLabel}>Change tone</Text>
+              </TouchableOpacity>
+            </View>
+            {toneMenuOpen && (
+              <View style={styles.toneChipRow}>
+                {(['formal', 'casual', 'friendly', 'concise'] as ToneStyle[]).map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={styles.quickChip}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setToneMenuOpen(false);
+                      const label = `Tone: ${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+                      runGeminiAction(label, (signal) => shiftTone(settings.geminiApiKey, plainText, t, signal));
+                    }}
+                  >
+                    <Text style={styles.quickChipText}>{t.charAt(0).toUpperCase()}{t.slice(1)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* ── Category section ── */}
-        <Text style={styles.sectionTitle}>Category</Text>
+        <View style={styles.sectionTitleRow}>
+          <View style={[styles.sectionTitleIcon, { backgroundColor: '#3B82F615' }]}>
+            <Ionicons name="grid-outline" size={16} color="#3B82F6" />
+          </View>
+          <Text style={styles.sectionTitle}>Category</Text>
+        </View>
         <View style={styles.metaCard}>
           <View style={[styles.section, styles.sectionLast]}>
             <TouchableOpacity
@@ -1058,7 +1376,12 @@ export function NoteEditorScreen() {
         </View>
 
         {/* ── Reminder section ── */}
-        <Text style={styles.sectionTitle}>Reminder</Text>
+        <View style={styles.sectionTitleRow}>
+          <View style={[styles.sectionTitleIcon, { backgroundColor: '#F59E0B15' }]}>
+            <Ionicons name="alarm-outline" size={16} color="#F59E0B" />
+          </View>
+          <Text style={styles.sectionTitle}>Reminder</Text>
+        </View>
         <View style={styles.metaCard}>
           <View style={[styles.section, styles.sectionLast]}>
             {reminderId || pendingReminderDate ? (
@@ -1266,6 +1589,82 @@ export function NoteEditorScreen() {
         onSelect={handleTuneSelect}
         onClose={() => setShowTunePicker(false)}
       />
+
+      {/* AI Action Result Modal */}
+      <Modal
+        visible={aiActionLabel !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeAiAction}
+      >
+        <Pressable style={styles.aiResultOverlay} onPress={closeAiAction}>
+          <Pressable style={styles.aiResultCard} onPress={() => {}}>
+            <View style={styles.aiResultHeader}>
+              <Ionicons name="sparkles" size={18} color="#7C3AED" />
+              <Text style={styles.aiResultTitle}>{aiActionLabel}</Text>
+              <TouchableOpacity onPress={closeAiAction} hitSlop={10}>
+                <Ionicons name="close" size={22} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.aiResultBody}>
+              {aiActionLoading ? (
+                <View style={styles.aiResultLoading}>
+                  <ActivityIndicator size="large" color={theme.colors.primary} />
+                  <Text style={styles.aiResultLoadingText}>Thinking…</Text>
+                </View>
+              ) : aiActionError ? (
+                <View style={styles.aiResultErrorWrap}>
+                  <View style={styles.aiResultErrorIcon}>
+                    <Ionicons name="alert-circle-outline" size={28} color={theme.colors.warning} />
+                  </View>
+                  <Text style={styles.aiResultErrorText}>{aiActionError}</Text>
+                </View>
+              ) : (
+                <Text style={styles.aiResultText}>{aiActionResult}</Text>
+              )}
+            </ScrollView>
+            {!aiActionLoading && aiActionResult && (
+              <View style={styles.aiResultActions}>
+                <TouchableOpacity
+                  style={[styles.aiResultBtn, styles.aiResultBtnSecondary]}
+                  onPress={() => applyAiResult('append')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.aiResultBtnSecondaryText}>Append</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.aiResultBtn, styles.aiResultBtnPrimary]}
+                  onPress={() => applyAiResult('replace')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.aiResultBtnPrimaryText}>Replace</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {!aiActionLoading && aiActionError && (
+              <View style={styles.aiResultActions}>
+                <TouchableOpacity
+                  style={[styles.aiResultBtn, styles.aiResultBtnSecondary]}
+                  onPress={closeAiAction}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.aiResultBtnSecondaryText}>Close</Text>
+                </TouchableOpacity>
+                {aiActionRetryable && (
+                  <TouchableOpacity
+                    style={[styles.aiResultBtn, styles.aiResultBtnPrimary]}
+                    onPress={retryAiAction}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="refresh" size={16} color="#FFF" />
+                    <Text style={[styles.aiResultBtnPrimaryText, { marginLeft: 6 }]}>Try again</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
     </View>
   );

@@ -207,7 +207,7 @@ export function TaskListScreen() {
     list: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.md,
-      paddingBottom: 100,
+      paddingBottom: 180,
     },
     sectionHeader: {
       ...theme.typography.label,
@@ -241,8 +241,8 @@ export function TaskListScreen() {
     },
     fab: {
       position: 'absolute',
-      // Position above the ad banner (banner is ~60dp tall) + some margin
-      bottom: insets.bottom + theme.spacing.xl + 60,
+      // Position above the floating tab bar (~76dp) + ad banner (~60dp) + insets.
+      bottom: insets.bottom + theme.spacing.xl + 60 + 76,
       right: theme.spacing.lg,
       width: 56,
       height: 56,
