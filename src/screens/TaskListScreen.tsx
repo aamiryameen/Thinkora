@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,7 @@ import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
 import type { Task } from '../types';
-import { showInterstitial } from '../services/ads';
+// import { showInterstitial } from '../services/ads';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -52,7 +52,7 @@ export function TaskListScreen() {
   } = useApp();
 
   const [search, setSearch] = useState('');
-  const completionCount = useRef(0);
+  // const completionCount = useRef(0);
 
   const onSearchChange = useCallback((text: string) => {
     setSearch(text);
@@ -65,12 +65,12 @@ export function TaskListScreen() {
 
   const handleToggleComplete = useCallback((task: Task) => {
     toggleTaskComplete(task.id);
-    if (!task.completed) {
-      completionCount.current += 1;
-      if (completionCount.current % 5 === 0) {
-        showInterstitial();
-      }
-    }
+    // if (!task.completed) {
+    //   completionCount.current += 1;
+    //   if (completionCount.current % 5 === 0) {
+    //     showInterstitial();
+    //   }
+    // }
   }, [toggleTaskComplete]);
 
   const handleLongPress = useCallback((task: Task) => {

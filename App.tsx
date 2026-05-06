@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StatusBar, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import mobileAds from 'react-native-google-mobile-ads';
-import { loadInterstitial } from './src/services/ads';
+// import { loadInterstitial, initAppOpenAds } from './src/services/ads';
 import { restoreQuickCaptureIfEnabled } from './src/services/quickCaptureService';
 import { runMigrationIfNeeded } from './src/services/migrateFromAsyncStorage';
 import { checkForUpdate, startUpdate } from './src/services/updateService';
@@ -99,9 +99,11 @@ function AppContent() {
 function App() {
   useEffect(() => {
     runMigrationIfNeeded();
-    mobileAds()
-      .initialize()
-      .then(() => loadInterstitial());
+    mobileAds().initialize();
+    // .then(() => {
+    //   loadInterstitial();
+    //   initAppOpenAds();
+    // });
     restoreQuickCaptureIfEnabled();
   }, []);
 
