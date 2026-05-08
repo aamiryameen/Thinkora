@@ -285,6 +285,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Schedule 8 PM evening reflection notification (once on app load)
   useEffect(() => { if (loaded) scheduleEveningReflection().catch(() => {}); }, [loaded]);
 
+  // Foreground geofence watcher — fires location reminders when in range.
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      const { startLocationWatch, stopLocationWatch } = require('../services/locationReminderService');
+      const hasLocationReminders = reminders.some(r => r.triggerType === 'location' && r.location);
+      if (hasLocationReminders) {
+        startLocationWatch(() => reminders);
+        return () => stopLocationWatch();
+      }
+    } catch {}
+  }, [loaded, reminders]);
+
+  // Refresh persistent notification tray when relevant state changes.
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      const { refreshPersistentTray } = require('../services/persistentTrayService');
+      const pending = tasks.filter(t => !t.completed);
+      const topTask = pending.find(t => t.priority === 'high') ?? pending.find(t => t.dueDate) ?? pending[0];
+      refreshPersistentTray({
+        topTask, streakDays: streak.currentStreak, pendingCount: pending.length,
+      }).catch(() => {});
+    } catch {}
+  }, [loaded, tasks, streak.currentStreak]);
+
+  // Check streak rewards when current streak changes.
+  useEffect(() => {
+    if (!loaded || streak.currentStreak === 0) return;
+    try {
+      const { checkRewardsForStreak } = require('../services/streakRewardsService');
+      checkRewardsForStreak(streak.currentStreak).catch(() => {});
+    } catch {}
+  }, [loaded, streak.currentStreak]);
+
+  // Log engagement for smart-timing learning.
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      const { logEngagement } = require('../services/smartTimingService');
+      logEngagement('open').catch(() => {});
+    } catch {}
+  }, [loaded]);
+
   // ─── Notes ──────────────────────────────────────────
   const addNote = useCallback((note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>): Note => {
     const now = Date.now();

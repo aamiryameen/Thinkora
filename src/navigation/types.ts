@@ -27,6 +27,10 @@ export type RootStackParamList = {
   ProductivityStats: undefined;
   Goals: undefined;
   HabitStacks: undefined;
+  VoiceCommand: undefined;
+  NoteCustomization: { noteId: string };
+  StreakRewards: undefined;
+  BirthdayRecap: undefined;
   PrivacyPolicy: undefined;
   Search: undefined;
   Gantt: undefined;

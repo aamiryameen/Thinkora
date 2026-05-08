@@ -8,6 +8,7 @@ import { useApp } from '../context/AppContext';
 import { useFeatures } from '../context/FeaturesContext';
 import { storage } from '../services/storage';
 import { getAllTimeRecords, formatDuration } from '../services/timeTrackingService';
+import { HeatMapCalendar } from '../components/HeatMapCalendar';
 import type { PomodoroSession } from '../types';
 
 interface DayStat {
@@ -121,6 +122,23 @@ export function ProductivityStatsScreen() {
     if (work.length === 0) return 0;
     return Math.round(work.reduce((sum, s) => sum + s.duration, 0) / work.length);
   }, [pomodoroSessions]);
+
+  // Heat map data: tasks completed + pomodoro sessions + habit check-ins per day
+  const heatmapData = useMemo(() => {
+    const map: Record<string, number> = {};
+    const add = (ts: number, weight: number = 1) => {
+      const d = new Date(ts);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      map[key] = (map[key] ?? 0) + weight;
+    };
+    tasks.filter(t => t.completed).forEach(t => add(t.updatedAt, 1));
+    pomodoroSessions.filter(s => s.type === 'work').forEach(s => add(s.completedAt, 1));
+    notes.forEach(n => add(n.createdAt, 1));
+    habits.forEach(h => h.completedDates.forEach(ds => {
+      map[ds] = (map[ds] ?? 0) + 1;
+    }));
+    return Object.entries(map).map(([date, count]) => ({ date, count }));
+  }, [tasks, pomodoroSessions, notes, habits]);
 
   const topTrackedTasks = useMemo(() => {
     return Object.entries(taskTrackedSeconds)
@@ -303,6 +321,12 @@ export function ProductivityStatsScreen() {
               </View>
             </View>
           </View>
+        </View>
+
+        {/* Heat map */}
+        <View>
+          <Text style={styles.sectionLabel}>Activity</Text>
+          <HeatMapCalendar data={heatmapData} weeks={26} />
         </View>
 
         {/* Top time-tracked tasks */}

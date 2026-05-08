@@ -16,22 +16,25 @@ export const spacing = {
 } as const;
 
 export const borderRadius = {
+  xxs: 6,
   sm: 10,
   md: 12,
   lg: 16,
   xl: 20,
+  xxl: 28,
   full: 9999,
 } as const;
 
 export const typography = {
-  title: { fontSize: 22, fontWeight: '600' as const },
-  titleSmall: { fontSize: 18, fontWeight: '600' as const },
-  body: { fontSize: 16, fontWeight: '400' as const },
-  bodySmall: { fontSize: 14, fontWeight: '400' as const },
-  caption: { fontSize: 13, fontWeight: '400' as const },
-  label: { fontSize: 12, fontWeight: '600' as const },
-  overline: { fontSize: 11, fontWeight: '600' as const },
-  button: { fontSize: 15, fontWeight: '600' as const },
+  display:     { fontSize: 28, fontWeight: '700' as const, letterSpacing: -0.4 },
+  title:       { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.2 },
+  titleSmall:  { fontSize: 18, fontWeight: '600' as const, letterSpacing: -0.1 },
+  body:        { fontSize: 16, fontWeight: '400' as const },
+  bodySmall:   { fontSize: 14, fontWeight: '400' as const },
+  caption:     { fontSize: 13, fontWeight: '500' as const },
+  label:       { fontSize: 12, fontWeight: '600' as const, letterSpacing: 0.2 },
+  overline:    { fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.6 },
+  button:      { fontSize: 15, fontWeight: '600' as const, letterSpacing: 0.1 },
 } as const;
 
 export const categoryColors = {
@@ -79,14 +82,16 @@ function buildLightColors(preset: ThemeColorPreset) {
     primaryDark: preset.primaryDark,
     accent: preset.accent,
     accentLight: '#FEF3C7',
-    background: '#F5F7FA',
+    background: '#F7F8FB',
     surface: '#FFFFFF',
     surfaceElevated: '#FFFFFF',
-    text: '#1A2138',
-    textSecondary: '#5A6578',
-    textMuted: '#8E99A8',
+    surfaceMuted: '#F1F3F8',
+    text: '#0F1729',
+    textSecondary: '#475569',
+    textMuted: '#7B8696',
     textDisabled: '#B8C1CC',
-    border: '#E3E8EF',
+    border: '#E5EAF2',
+    borderSubtle: '#EEF1F6',
     borderFocus: preset.primary,
     error: '#EF4444',
     errorLight: '#FEF2F2',
@@ -95,10 +100,12 @@ function buildLightColors(preset: ThemeColorPreset) {
     warning: '#F59E0B',
     warningLight: '#FEF3C7',
     star: '#F59E0B',
-    icon: '#5A6578',
+    icon: '#475569',
     tabBarBg: '#FFFFFF',
     cardBg: '#FFFFFF',
-    inputBg: '#F5F7FA',
+    inputBg: '#F1F3F8',
+    chipBg: 'rgba(15,23,41,0.06)',
+    overlay: 'rgba(15,23,41,0.45)',
   } as const;
 }
 
@@ -110,14 +117,16 @@ function buildDarkColors(preset: ThemeColorPreset) {
     primaryDark: preset.primary,
     accent: preset.accent + 'DD',
     accentLight: '#3D2E05',
-    background: '#0F1219',
-    surface: '#1A1F2E',
-    surfaceElevated: '#242B3D',
-    text: '#F0F2F5',
-    textSecondary: '#A0AABB',
-    textMuted: '#6B778C',
+    background: '#0B0E16',
+    surface: '#161B27',
+    surfaceElevated: '#202738',
+    surfaceMuted: '#1B2030',
+    text: '#F1F4F8',
+    textSecondary: '#AFBAC9',
+    textMuted: '#7A8597',
     textDisabled: '#4A5568',
-    border: '#2D3548',
+    border: '#2A3142',
+    borderSubtle: '#222838',
     borderFocus: lightenPrimary,
     error: '#F87171',
     errorLight: '#3B1515',
@@ -126,10 +135,12 @@ function buildDarkColors(preset: ThemeColorPreset) {
     warning: '#FBBF24',
     warningLight: '#3D2E05',
     star: '#FBBF24',
-    icon: '#A0AABB',
-    tabBarBg: '#1A1F2E',
-    cardBg: '#1A1F2E',
-    inputBg: '#242B3D',
+    icon: '#AFBAC9',
+    tabBarBg: '#161B27',
+    cardBg: '#161B27',
+    inputBg: '#1F2536',
+    chipBg: 'rgba(255,255,255,0.06)',
+    overlay: 'rgba(0,0,0,0.55)',
   } as const;
 }
 
@@ -138,17 +149,21 @@ export const darkColors = buildDarkColors(THEME_PRESETS[0]);
 
 function buildLightShadows(primary: string) {
   return {
-    card: { shadowColor: primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
-    fab: { shadowColor: primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
-    input: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 2, elevation: 1 },
+    subtle:   { shadowColor: '#0F1729', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 6,  elevation: 1 },
+    card:     { shadowColor: primary,   shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 14, elevation: 3 },
+    elevated: { shadowColor: '#0F1729', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.10, shadowRadius: 22, elevation: 8 },
+    fab:      { shadowColor: primary,   shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.28, shadowRadius: 14, elevation: 10 },
+    input:    { shadowColor: '#000',    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 2,  elevation: 1 },
   } as const;
 }
 
 function buildDarkShadows(primary: string) {
   return {
-    card: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
-    fab: { shadowColor: primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 10 },
-    input: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 2 },
+    subtle:   { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.20, shadowRadius: 4,  elevation: 1 },
+    card:     { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.30, shadowRadius: 10, elevation: 6 },
+    elevated: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.40, shadowRadius: 18, elevation: 10 },
+    fab:      { shadowColor: primary, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.40, shadowRadius: 14, elevation: 12 },
+    input:    { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.20, shadowRadius: 4,  elevation: 2 },
   } as const;
 }
 
@@ -163,7 +178,13 @@ export type ShadowStyle = {
   shadowRadius: number;
   elevation: number;
 };
-export type ShadowSet = { card: ShadowStyle; fab: ShadowStyle; input: ShadowStyle };
+export type ShadowSet = {
+  subtle: ShadowStyle;
+  card: ShadowStyle;
+  elevated: ShadowStyle;
+  fab: ShadowStyle;
+  input: ShadowStyle;
+};
 export type Theme = {
   colors: ColorPalette;
   spacing: typeof spacing;

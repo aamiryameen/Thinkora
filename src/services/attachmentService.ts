@@ -61,34 +61,11 @@ async function requestCameraPermission(): Promise<boolean> {
   }
 }
 
-async function requestStoragePermission(): Promise<boolean> {
-  try {
-    // Android 13+ uses READ_MEDIA_IMAGES, older uses READ_EXTERNAL_STORAGE
-    const permission =
-      parseInt(Platform.Version as string, 10) >= 33
-        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
-    const result = await PermissionsAndroid.request(permission, {
-      title: 'Storage Permission',
-      message: 'This app needs access to your photos.',
-      buttonPositive: 'Allow',
-      buttonNegative: 'Deny',
-    });
-    return result === PermissionsAndroid.RESULTS.GRANTED;
-  } catch {
-    return false;
-  }
-}
-
 export async function pickImageFromGallery(): Promise<PickImageResult | null> {
   if (Platform.OS !== 'android' || !launchImageLibrary) return null;
 
-  const granted = await requestStoragePermission();
-  if (!granted) {
-    Alert.alert('Permission Denied', 'Storage permission is required to pick photos.');
-    return null;
-  }
-
+  // No runtime permission needed — react-native-image-picker v7+ uses
+  // Android's system Photo Picker on Android 13+, which is permission-free.
   return new Promise((resolve) => {
     launchImageLibrary!(
       { mediaType: 'photo', includeBase64: false, quality: 0.8 },

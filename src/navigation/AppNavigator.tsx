@@ -35,6 +35,10 @@ import { ShareNoteCardScreen } from '../screens/ShareNoteCardScreen';
 import { ProductivityStatsScreen } from '../screens/ProductivityStatsScreen';
 import { GoalsScreen } from '../screens/GoalsScreen';
 import { HabitStacksScreen } from '../screens/HabitStacksScreen';
+import { VoiceCommandScreen } from '../screens/VoiceCommandScreen';
+import { NoteCustomizationScreen } from '../screens/NoteCustomizationScreen';
+import { StreakRewardsScreen } from '../screens/StreakRewardsScreen';
+import { BirthdayRecapScreen } from '../screens/BirthdayRecapScreen';
 import { ThinkoraTabBar } from '../components/ThinkoraTabBar';
 import { useTheme } from '../context/ThemeContext';
 import { navigationRef } from '../services/navigationService';
@@ -111,6 +115,10 @@ export function AppNavigator() {
         <Stack.Screen name="ProductivityStats" component={ProductivityStatsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Goals" component={GoalsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="HabitStacks" component={HabitStacksScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="VoiceCommand" component={VoiceCommandScreen} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="NoteCustomization" component={NoteCustomizationScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="StreakRewards" component={StreakRewardsScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="BirthdayRecap" component={BirthdayRecapScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Quotes" component={QuotesScreen} options={{ presentation: 'card' }} />
       </Stack.Navigator>
     </NavigationContainer>

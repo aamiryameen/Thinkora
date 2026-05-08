@@ -710,13 +710,13 @@ export function NoteEditorScreen() {
 
   const categories: SmartCategory[] = ['work', 'personal', 'ideas', 'todos', 'none'];
 
-  const CATEGORY_META: Record<SmartCategory, { emoji: string; color: string; bg: string }> = {
-    all:      { emoji: '🗂️', color: '#6B7280', bg: '#6B728015' },
-    work:     { emoji: '💼', color: '#3B82F6', bg: '#3B82F615' },
-    personal: { emoji: '🌿', color: '#10B981', bg: '#10B98115' },
-    ideas:    { emoji: '💡', color: '#F59E0B', bg: '#F59E0B15' },
-    todos:    { emoji: '✅', color: '#8B5CF6', bg: '#8B5CF615' },
-    none:     { emoji: '📝', color: '#6B7280',  bg: '#6B728015' },
+  const CATEGORY_META: Record<SmartCategory, { emoji: string; color: string; bg: string; label: string; desc: string }> = {
+    all:      { emoji: '🗂️', color: '#6B7280', bg: '#6B728015', label: 'All',      desc: 'Everything together' },
+    work:     { emoji: '💼', color: '#3B82F6', bg: '#3B82F622', label: 'Work',     desc: 'Meetings, docs & projects' },
+    personal: { emoji: '🌿', color: '#10B981', bg: '#10B98122', label: 'Personal', desc: 'Life, family & you' },
+    ideas:    { emoji: '💡', color: '#F59E0B', bg: '#F59E0B22', label: 'Ideas',    desc: 'Sparks worth keeping' },
+    todos:    { emoji: '✅', color: '#8B5CF6', bg: '#8B5CF622', label: 'Todos',    desc: 'Things to get done' },
+    none:     { emoji: '📝', color: '#6B7280', bg: '#6B728015', label: 'None',     desc: 'No category yet' },
   };
 
   const styles = useMemo(
@@ -809,11 +809,11 @@ export function NoteEditorScreen() {
         editorCard: {
           marginHorizontal: theme.spacing.lg,
           marginTop: theme.spacing.lg,
-          borderRadius: 20,
+          borderRadius: theme.borderRadius.xxl,
           backgroundColor: theme.colors.cardBg,
           overflow: 'hidden',
           paddingBottom: theme.spacing.md,
-          ...theme.shadows.card,
+          ...theme.shadows.elevated,
         },
 
         /* ── Section header row (icon tile + label) ── */
@@ -831,6 +831,7 @@ export function NoteEditorScreen() {
           borderRadius: 9,
           alignItems: 'center',
           justifyContent: 'center',
+          backgroundColor: theme.colors.primaryLight,
         },
         sectionTitle: {
           ...theme.typography.label,
@@ -875,28 +876,70 @@ export function NoteEditorScreen() {
           flex: 1,
         },
 
-        /* ── Category grid ───────────────────────── */
+        /* ── Category cards (legacy compact emoji used in header pill) ── */
         categoryGrid: {
-          flexDirection: 'row',
           gap: theme.spacing.sm,
-        },
-        categoryGridItem: {
-          flex: 1,
-          borderRadius: theme.borderRadius.lg,
-          paddingVertical: 10,
-          alignItems: 'center',
-          gap: 4,
-          borderWidth: 1.5,
-          borderColor: 'transparent',
-        },
-        categoryGridItemSelected: {
-          borderColor: theme.colors.primary,
         },
         categoryGridEmoji: { fontSize: 18 },
         categoryGridText: {
           ...theme.typography.caption,
           fontWeight: '600',
           textTransform: 'capitalize',
+        },
+
+        /* ── Category card list ───────────────────── */
+        catCard: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.md,
+          paddingVertical: theme.spacing.md,
+          paddingHorizontal: theme.spacing.md,
+          borderRadius: theme.borderRadius.lg,
+          backgroundColor: theme.colors.surface,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: theme.colors.borderSubtle,
+          overflow: 'hidden',
+          ...theme.shadows.subtle,
+        },
+        catCardSelected: {
+          borderWidth: 2,
+        },
+        catCardBar: {
+          position: 'absolute',
+          left: 0, top: 0, bottom: 0,
+          width: 4,
+          borderTopLeftRadius: theme.borderRadius.lg,
+          borderBottomLeftRadius: theme.borderRadius.lg,
+        },
+        catCardEmojiWrap: {
+          width: 44,
+          height: 44,
+          borderRadius: 14,
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        catCardEmoji: { fontSize: 22, lineHeight: 24 },
+        catCardBody: { flex: 1, gap: 2 },
+        catCardLabel: {
+          ...theme.typography.body,
+          fontWeight: '700',
+          color: theme.colors.text,
+          letterSpacing: -0.1,
+        },
+        catCardLabelSelected: { },
+        catCardDesc: {
+          ...theme.typography.caption,
+          color: theme.colors.textMuted,
+          fontWeight: '500',
+        },
+        catCardCheck: {
+          width: 26, height: 26,
+          borderRadius: 13,
+          alignItems: 'center', justifyContent: 'center',
+        },
+        catCardCheckOff: {
+          borderWidth: 1.5,
+          borderColor: theme.colors.borderSubtle,
         },
 
         /* ── Tags ────────────────────────────────── */
@@ -1043,7 +1086,7 @@ export function NoteEditorScreen() {
         },
         aiSuggHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, padding: theme.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#7C3AED30' },
         aiSuggTitle: { ...theme.typography.body, color: '#7C3AED', fontWeight: '700', flex: 1 },
-        aiSuggItem: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, gap: theme.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#7C3AED15' },
+        aiSuggItem: { flexDirection: 'row', alignItems: 'center', padding: theme.spacing.md, gap: theme.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#7C3AED22' },
         aiSuggItemText: { ...theme.typography.body, color: theme.colors.text, flex: 1 },
         aiSuggAddBtn: { backgroundColor: '#7C3AED20', borderRadius: theme.borderRadius.full, paddingHorizontal: theme.spacing.sm, paddingVertical: 4 },
         aiSuggAddText: { ...theme.typography.caption, color: '#7C3AED', fontWeight: '700' },
@@ -1052,26 +1095,33 @@ export function NoteEditorScreen() {
         aiActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
         aiActionBtn: {
           flexGrow: 1,
-          flexBasis: '48%',
+          flexBasis: '47%',
           flexDirection: 'row',
           alignItems: 'center',
           gap: theme.spacing.sm,
-          paddingVertical: 12,
-          paddingHorizontal: theme.spacing.md,
+          paddingVertical: 14,
+          paddingHorizontal: 14,
           borderRadius: theme.borderRadius.lg,
-          backgroundColor: '#7C3AED10',
-          borderWidth: 1,
-          borderColor: '#7C3AED25',
+          backgroundColor: theme.colors.surface,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: theme.colors.borderSubtle,
+          ...theme.shadows.subtle,
         },
         aiActionIcon: {
-          width: 28,
-          height: 28,
-          borderRadius: 9,
-          backgroundColor: '#7C3AED20',
+          width: 36,
+          height: 36,
+          borderRadius: 11,
+          backgroundColor: '#7C3AED1A',
           alignItems: 'center',
           justifyContent: 'center',
         },
-        aiActionLabel: { ...theme.typography.bodySmall, color: '#4C1D95', fontWeight: '700', flex: 1 },
+        aiActionLabel: {
+          ...theme.typography.bodySmall,
+          color: theme.colors.text,
+          fontWeight: '700',
+          flex: 1,
+          letterSpacing: -0.1,
+        },
 
         /* AI result modal */
         aiResultOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', padding: theme.spacing.lg },
@@ -1188,6 +1238,30 @@ export function NoteEditorScreen() {
             <Ionicons name="share-outline" size={20} color={theme.colors.icon} />
           </TouchableOpacity>
           {!isNew && (
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => {
+                const { speakNote, isSpeaking, stopSpeaking } = require('../services/ttsService');
+                if (isSpeaking()) { stopSpeaking(); return; }
+                speakNote(title || 'Untitled', plainText || '');
+              }}
+              hitSlop={HEADER_HIT_SLOP}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="volume-medium-outline" size={20} color={theme.colors.icon} />
+            </TouchableOpacity>
+          )}
+          {!isNew && noteId && (
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => (navigation as any).navigate('NoteCustomization', { noteId })}
+              hitSlop={HEADER_HIT_SLOP}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="brush-outline" size={20} color={theme.colors.icon} />
+            </TouchableOpacity>
+          )}
+          {!isNew && (
             <TouchableOpacity style={styles.headerIconBtn} onPress={confirmDelete} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
               <Icon name="delete" size={20} color={theme.colors.error} />
             </TouchableOpacity>
@@ -1217,7 +1291,7 @@ export function NoteEditorScreen() {
         {tags.length > 0 && (
           <>
             <View style={styles.sectionTitleRow}>
-              <View style={[styles.sectionTitleIcon, { backgroundColor: '#06B6D415' }]}>
+              <View style={[styles.sectionTitleIcon, { backgroundColor: '#06B6D422' }]}>
                 <Ionicons name="pricetag-outline" size={16} color="#06B6D4" />
               </View>
               <Text style={styles.sectionTitle}>Tags</Text>
@@ -1240,7 +1314,7 @@ export function NoteEditorScreen() {
         {aiSuggestions.length > 0 && (
           <>
             <View style={styles.sectionTitleRow}>
-              <View style={[styles.sectionTitleIcon, { backgroundColor: '#7C3AED15' }]}>
+              <View style={[styles.sectionTitleIcon, { backgroundColor: '#7C3AED22' }]}>
                 <Ionicons name="sparkles" size={16} color="#7C3AED" />
               </View>
               <Text style={styles.sectionTitle}>AI Suggestions</Text>
@@ -1266,7 +1340,7 @@ export function NoteEditorScreen() {
 
         {/* ── AI Assistant (Gemini) ── */}
         <View style={styles.sectionTitleRow}>
-          <View style={[styles.sectionTitleIcon, { backgroundColor: '#7C3AED15' }]}>
+          <View style={[styles.sectionTitleIcon, { backgroundColor: '#7C3AED22' }]}>
             <Ionicons name="color-wand-outline" size={16} color="#7C3AED" />
           </View>
           <Text style={styles.sectionTitle}>AI Assistant</Text>
@@ -1280,7 +1354,7 @@ export function NoteEditorScreen() {
                 onPress={() => runGeminiAction('Summary', (signal) => summarizeNote(settings.geminiApiKey, plainText, signal))}
               >
                 <View style={styles.aiActionIcon}>
-                  <Ionicons name="document-text-outline" size={16} color="#7C3AED" />
+                  <Ionicons name="document-text-outline" size={18} color="#A78BFA" />
                 </View>
                 <Text style={styles.aiActionLabel}>Summarize</Text>
               </TouchableOpacity>
@@ -1290,7 +1364,7 @@ export function NoteEditorScreen() {
                 onPress={() => runGeminiAction('Rewrite', (signal) => rewriteNote(settings.geminiApiKey, plainText, signal))}
               >
                 <View style={styles.aiActionIcon}>
-                  <Ionicons name="create-outline" size={16} color="#7C3AED" />
+                  <Ionicons name="create-outline" size={18} color="#A78BFA" />
                 </View>
                 <Text style={styles.aiActionLabel}>Rewrite</Text>
               </TouchableOpacity>
@@ -1300,7 +1374,7 @@ export function NoteEditorScreen() {
                 onPress={() => runGeminiAction('Grammar fix', (signal) => fixGrammar(settings.geminiApiKey, plainText, signal))}
               >
                 <View style={styles.aiActionIcon}>
-                  <Ionicons name="checkmark-done-outline" size={16} color="#7C3AED" />
+                  <Ionicons name="checkmark-done-outline" size={18} color="#A78BFA" />
                 </View>
                 <Text style={styles.aiActionLabel}>Fix grammar</Text>
               </TouchableOpacity>
@@ -1310,7 +1384,7 @@ export function NoteEditorScreen() {
                 onPress={() => setToneMenuOpen((v) => !v)}
               >
                 <View style={styles.aiActionIcon}>
-                  <Ionicons name="color-palette-outline" size={16} color="#7C3AED" />
+                  <Ionicons name="color-palette-outline" size={18} color="#A78BFA" />
                 </View>
                 <Text style={styles.aiActionLabel}>Change tone</Text>
               </TouchableOpacity>
@@ -1338,7 +1412,7 @@ export function NoteEditorScreen() {
 
         {/* ── Category section ── */}
         <View style={styles.sectionTitleRow}>
-          <View style={[styles.sectionTitleIcon, { backgroundColor: '#3B82F615' }]}>
+          <View style={[styles.sectionTitleIcon, { backgroundColor: '#3B82F622' }]}>
             <Ionicons name="grid-outline" size={16} color="#3B82F6" />
           </View>
           <Text style={styles.sectionTitle}>Category</Text>
@@ -1346,7 +1420,7 @@ export function NoteEditorScreen() {
         <View style={styles.metaCard}>
           <View style={[styles.section, styles.sectionLast]}>
             <TouchableOpacity
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: theme.spacing.sm, backgroundColor: '#7C3AED15', paddingVertical: 4, paddingHorizontal: theme.spacing.sm, borderRadius: theme.borderRadius.full }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: theme.spacing.sm, backgroundColor: '#7C3AED22', paddingVertical: 4, paddingHorizontal: theme.spacing.sm, borderRadius: theme.borderRadius.full }}
               onPress={handleAutoCategory}
               activeOpacity={0.8}
             >
@@ -1360,14 +1434,30 @@ export function NoteEditorScreen() {
                 return (
                   <TouchableOpacity
                     key={c}
-                    style={[styles.categoryGridItem, { backgroundColor: selected ? m.bg : theme.colors.inputBg }, selected && styles.categoryGridItemSelected, selected && { borderColor: m.color }]}
+                    activeOpacity={0.85}
+                    style={[
+                      styles.catCard,
+                      selected && styles.catCardSelected,
+                      selected && { borderColor: m.color, backgroundColor: m.bg },
+                    ]}
                     onPress={() => setCategory(c)}
-                    activeOpacity={0.7}
                   >
-                    <Text style={styles.categoryGridEmoji}>{m.emoji}</Text>
-                    <Text style={[styles.categoryGridText, { color: selected ? m.color : theme.colors.textSecondary }]}>
-                      {c === 'none' ? 'None' : c}
-                    </Text>
+                    <View style={[styles.catCardBar, { backgroundColor: m.color }]} />
+                    <View style={[styles.catCardEmojiWrap, { backgroundColor: m.bg }]}>
+                      <Text style={styles.catCardEmoji}>{m.emoji}</Text>
+                    </View>
+                    <View style={styles.catCardBody}>
+                      <Text style={[styles.catCardLabel, selected && { color: m.color }]}>
+                        {m.label}
+                      </Text>
+                      <Text style={styles.catCardDesc} numberOfLines={1}>{m.desc}</Text>
+                    </View>
+                    <View style={[
+                      styles.catCardCheck,
+                      selected ? { backgroundColor: m.color } : styles.catCardCheckOff,
+                    ]}>
+                      {selected && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                    </View>
                   </TouchableOpacity>
                 );
               })}
@@ -1377,7 +1467,7 @@ export function NoteEditorScreen() {
 
         {/* ── Reminder section ── */}
         <View style={styles.sectionTitleRow}>
-          <View style={[styles.sectionTitleIcon, { backgroundColor: '#F59E0B15' }]}>
+          <View style={[styles.sectionTitleIcon, { backgroundColor: '#F59E0B22' }]}>
             <Ionicons name="alarm-outline" size={16} color="#F59E0B" />
           </View>
           <Text style={styles.sectionTitle}>Reminder</Text>
@@ -1478,7 +1568,7 @@ export function NoteEditorScreen() {
                 if (r) addAttachment(attachmentToNoteAttachment(r));
               }, 350);
             }}>
-              <View style={[styles.attachOptionIcon, { backgroundColor: '#3B82F615' }]}>
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#3B82F622' }]}>
                 <Ionicons name="image-outline" size={24} color="#3B82F6" />
               </View>
               <View>
@@ -1495,7 +1585,7 @@ export function NoteEditorScreen() {
                 if (r) addAttachment(attachmentToNoteAttachment(r));
               }, 350);
             }}>
-              <View style={[styles.attachOptionIcon, { backgroundColor: '#10B98115' }]}>
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#10B98122' }]}>
                 <Ionicons name="camera-outline" size={24} color="#10B981" />
               </View>
               <View>
@@ -1512,7 +1602,7 @@ export function NoteEditorScreen() {
                 if (r) addAttachment(attachmentToNoteAttachment(r));
               }, 350);
             }}>
-              <View style={[styles.attachOptionIcon, { backgroundColor: '#F59E0B15' }]}>
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#F59E0B22' }]}>
                 <Ionicons name="document-outline" size={24} color="#F59E0B" />
               </View>
               <View>
@@ -1526,7 +1616,7 @@ export function NoteEditorScreen() {
               setAttachMenuVisible(false);
               setTimeout(() => setSketchModal(true), 350);
             }}>
-              <View style={[styles.attachOptionIcon, { backgroundColor: '#8B5CF615' }]}>
+              <View style={[styles.attachOptionIcon, { backgroundColor: '#8B5CF622' }]}>
                 <Ionicons name="pencil-outline" size={24} color="#8B5CF6" />
               </View>
               <View>

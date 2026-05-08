@@ -6,6 +6,7 @@ import {
   getTimeRecord, startTimer, stopTimer, deleteEntry, formatDuration,
   type TaskTimeRecord,
 } from '../services/timeTrackingService';
+import { getPersonalRecord, recordRun, type PersonalRecord, type BattleResult } from '../services/timeBoxBattleService';
 
 interface Props {
   taskId: string;
@@ -14,11 +15,14 @@ interface Props {
 export function TaskTimer({ taskId }: Props) {
   const { theme } = useTheme();
   const [record, setRecord] = useState<TaskTimeRecord | null>(null);
+  const [pr, setPr] = useState<PersonalRecord | null>(null);
+  const [lastBattle, setLastBattle] = useState<BattleResult | null>(null);
   const [now, setNow] = useState(Date.now());
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     getTimeRecord(taskId).then(setRecord);
+    getPersonalRecord(taskId).then(setPr);
   }, [taskId]);
 
   // Tick every second when timer is running
@@ -42,7 +46,15 @@ export function TaskTimer({ taskId }: Props) {
     if (isRunning) {
       const updated = await stopTimer(taskId);
       setRecord(updated);
+      // Record run vs personal best
+      const battle = await recordRun(taskId);
+      if (battle) {
+        setLastBattle(battle);
+        const updatedPr = await getPersonalRecord(taskId);
+        setPr(updatedPr);
+      }
     } else {
+      setLastBattle(null); // clear last battle result on new run
       const updated = await startTimer(taskId);
       setRecord(updated);
     }
@@ -115,6 +127,47 @@ export function TaskTimer({ taskId }: Props) {
           <Text style={styles.btnText}>{isRunning ? 'Stop' : 'Start'}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Time Box Battle — personal record + last result */}
+      {pr && pr.attempts > 0 && (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          backgroundColor: theme.colors.primary + '12',
+          borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+        }}>
+          <Ionicons name="trophy" size={16} color={theme.colors.primary} />
+          <Text style={{ fontSize: 12, fontWeight: '700', color: theme.colors.text, flex: 1 }}>
+            Best: {formatDuration(pr.bestSeconds)} · {pr.attempts} attempt{pr.attempts === 1 ? '' : 's'}
+          </Text>
+          {isRunning && (
+            <Text style={{ fontSize: 11, fontWeight: '700', color: theme.colors.primary }}>
+              {liveSeconds < pr.bestSeconds ? '🔥 Beating it!' : 'Beat it!'}
+            </Text>
+          )}
+        </View>
+      )}
+
+      {lastBattle && (
+        <View style={{
+          backgroundColor: lastBattle.newRecord ? '#10B98115' : theme.colors.inputBg,
+          borderRadius: 10, padding: 10,
+          borderWidth: 1.5, borderColor: lastBattle.newRecord ? '#10B981' : 'transparent',
+        }}>
+          {lastBattle.newRecord ? (
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#10B981' }}>
+              🎉 NEW RECORD! {formatDuration(Math.abs(lastBattle.deltaSeconds))} faster!
+            </Text>
+          ) : lastBattle.previousBest ? (
+            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.textMuted }}>
+              {formatDuration(lastBattle.deltaSeconds)} slower than best · keep at it!
+            </Text>
+          ) : (
+            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.textMuted }}>
+              First run logged · {formatDuration(lastBattle.runSeconds)}
+            </Text>
+          )}
+        </View>
+      )}
 
       {record.entries.slice(0, 5).map(e => (
         <View key={e.id} style={styles.entry}>

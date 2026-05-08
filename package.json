@@ -42,6 +42,7 @@
     "react-native-screens": "^4.24.0",
     "react-native-signature-canvas": "^4.7.0",
     "react-native-sound": "^0.13.0",
+    "react-native-tts": "^4.1.1",
     "react-native-vector-icons": "^10.3.0",
     "react-native-view-shot": "^4.0.3",
     "react-native-webview": "^13.16.1"

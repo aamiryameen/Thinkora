@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { TaskCard } from '../components/TaskCard';
 import { StreakCard } from '../components/StreakCard';
+import { MorningBriefingCard } from '../components/MorningBriefingCard';
+import { WeatherCard } from '../components/WeatherCard';
 import { useApp } from '../context/AppContext';
 import { useFeatures } from '../context/FeaturesContext';
 import { useTheme } from '../context/ThemeContext';
@@ -41,12 +43,14 @@ const QUICK_ACTIONS = [
 ] as const;
 
 const FEATURE_SHORTCUTS = [
+  { label: 'Voice', icon: 'mic-outline', color: '#8B5CF6', route: 'VoiceCommand' },
   { label: 'Matrix', icon: 'grid-outline', color: '#8B5CF6', route: 'Eisenhower' },
   { label: 'Lists', icon: 'people-outline', color: '#3B82F6', route: 'SharedLists' },
   { label: 'Focus', icon: 'timer-outline', color: '#14B8A6', route: 'Pomodoro' },
   { label: 'Quotes', icon: 'chatbubble-ellipses-outline', color: '#7C3AED', route: 'Quotes' },
   { label: 'Templates', icon: 'copy-outline', color: '#6366F1', route: 'Templates' },
   { label: 'Badges', icon: 'trophy-outline', color: '#F59E0B', route: 'Badges' },
+  { label: 'Rewards', icon: 'ribbon-outline', color: '#F97316', route: 'StreakRewards' },
   { label: 'Reports', icon: 'bar-chart-outline', color: '#4A90D9', route: 'Reports' },
   { label: 'Categories', icon: 'pricetags-outline', color: '#10B981', route: 'CategoryManager' },
   { label: 'Habits', icon: 'flame-outline', color: '#EF4444', route: 'HabitTracker' },
@@ -197,7 +201,8 @@ export function MyDayScreen() {
     miniStatNum: { fontSize: 18, fontWeight: '800', color: '#FFF' },
     miniStatLabel: { ...theme.typography.caption, color: '#FFFFFFBB', fontSize: 10 },
     // Scroll
-    scroll: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: 180 },
+    scrollOuter: { paddingBottom: 180 },
+    scrollBody: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg },
     // Quick actions
     quickActionsRow: { flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.xl },
     quickAction: {
@@ -318,57 +323,71 @@ export function MyDayScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.greeting}>{greeting}!</Text>
-            <Text style={styles.date}>{now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollOuter}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Header (now scrolls with the rest of the screen) ── */}
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <View>
+              <Text style={styles.greeting}>{greeting}!</Text>
+              <Text style={styles.date}>{now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+            </View>
+            <TouchableOpacity style={styles.moodBtn} onPress={() => navigation.navigate('MoodJournal')}>
+              {todayJournal ? (
+                <Text style={{ fontSize: 22 }}>{MOOD_EMOJIS[todayJournal.mood]}</Text>
+              ) : (
+                <Ionicons name="happy-outline" size={22} color="#FFF" />
+              )}
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.moodBtn} onPress={() => navigation.navigate('MoodJournal')}>
-            {todayJournal ? (
-              <Text style={{ fontSize: 22 }}>{MOOD_EMOJIS[todayJournal.mood]}</Text>
-            ) : (
-              <Ionicons name="happy-outline" size={22} color="#FFF" />
-            )}
+
+          {/* Weather — current location */}
+          <View style={{ marginTop: theme.spacing.lg }}>
+            <WeatherCard onPrimary />
+          </View>
+
+          {/* Quote — tap to browse all quotes */}
+          <TouchableOpacity
+            style={styles.quoteCard}
+            onPress={() => navigation.navigate('Quotes')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.quoteText}>"{dailyQuote.text}"</Text>
+            {dailyQuote.author ? <Text style={styles.quoteAuthor}>— {dailyQuote.author}</Text> : null}
           </TouchableOpacity>
+
+          {/* Progress row */}
+          <View style={styles.progressRow}>
+            <View style={styles.progressCard}>
+              <Text style={styles.progressPct}>{completionPct}%</Text>
+              <Text style={styles.progressLabel}>Overall</Text>
+            </View>
+            <View style={styles.miniStat}>
+              <Ionicons name="checkmark-done" size={18} color="#FFF" style={styles.miniStatIcon} />
+              <Text style={styles.miniStatNum}>{taskStats.completed}</Text>
+              <Text style={styles.miniStatLabel}>Done</Text>
+            </View>
+            <View style={styles.miniStat}>
+              <Ionicons name="time-outline" size={18} color="#FFF" style={styles.miniStatIcon} />
+              <Text style={styles.miniStatNum}>{taskStats.pending}</Text>
+              <Text style={styles.miniStatLabel}>Pending</Text>
+            </View>
+            <View style={styles.miniStat}>
+              <Ionicons name="flame" size={18} color="#FFF" style={styles.miniStatIcon} />
+              <Text style={styles.miniStatNum}>{bestStreak}</Text>
+              <Text style={styles.miniStatLabel}>Streak</Text>
+            </View>
+          </View>
         </View>
 
-        {/* Quote — tap to browse all quotes */}
-        <TouchableOpacity
-          style={styles.quoteCard}
-          onPress={() => navigation.navigate('Quotes')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.quoteText}>"{dailyQuote.text}"</Text>
-          {dailyQuote.author ? <Text style={styles.quoteAuthor}>— {dailyQuote.author}</Text> : null}
-        </TouchableOpacity>
-
-        {/* Progress row */}
-        <View style={styles.progressRow}>
-          <View style={styles.progressCard}>
-            <Text style={styles.progressPct}>{completionPct}%</Text>
-            <Text style={styles.progressLabel}>Overall</Text>
-          </View>
-          <View style={styles.miniStat}>
-            <Ionicons name="checkmark-done" size={18} color="#FFF" style={styles.miniStatIcon} />
-            <Text style={styles.miniStatNum}>{taskStats.completed}</Text>
-            <Text style={styles.miniStatLabel}>Done</Text>
-          </View>
-          <View style={styles.miniStat}>
-            <Ionicons name="time-outline" size={18} color="#FFF" style={styles.miniStatIcon} />
-            <Text style={styles.miniStatNum}>{taskStats.pending}</Text>
-            <Text style={styles.miniStatLabel}>Pending</Text>
-          </View>
-          <View style={styles.miniStat}>
-            <Ionicons name="flame" size={18} color="#FFF" style={styles.miniStatIcon} />
-            <Text style={styles.miniStatNum}>{bestStreak}</Text>
-            <Text style={styles.miniStatLabel}>Streak</Text>
-          </View>
+        <View style={styles.scrollBody}>
+        {/* ── Morning Briefing ── */}
+        <View style={{ marginBottom: 16 }}>
+          <MorningBriefingCard />
         </View>
-      </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* ── Quick Actions ── */}
         <View style={styles.quickActionsRow}>
           {QUICK_ACTIONS.map((action) => (
@@ -556,6 +575,7 @@ export function MyDayScreen() {
               </TouchableOpacity>
             ))}
           </View>
+        </View>
         </View>
       </ScrollView>
       <AdBanner />

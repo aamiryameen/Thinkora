@@ -47,6 +47,7 @@ export function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [quickCapture, setQuickCapture] = useState(false);
+  const [persistentTray, setPersistentTray] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [selectedTune, setSelectedTuneState] = useState<ReminderTune>(REMINDER_TUNES[0]);
   const [showTunePicker, setShowTunePicker] = useState(false);
@@ -58,7 +59,31 @@ export function SettingsScreen() {
     isQuickCaptureEnabled().then(setQuickCapture);
     getSelectedReminderTune().then(setSelectedTuneState);
     getCustomTunes().then(setCustomTunes);
+    try {
+      const { isPersistentTrayEnabled } = require('../services/persistentTrayService');
+      isPersistentTrayEnabled().then(setPersistentTray);
+    } catch {}
   }, []);
+
+  const handleTogglePersistentTray = async () => {
+    try {
+      const { setPersistentTrayEnabled, showPersistentTray, hidePersistentTray } = require('../services/persistentTrayService');
+      const next = !persistentTray;
+      await setPersistentTrayEnabled(next);
+      setPersistentTray(next);
+      if (next) {
+        await showPersistentTray({
+          topTask: undefined,
+          streakDays: 0,
+          pendingCount: tasks.filter(t => !t.completed).length,
+        });
+      } else {
+        await hidePersistentTray();
+      }
+    } catch (e: any) {
+      Alert.alert('Could not toggle', e?.message ?? 'Try again');
+    }
+  };
 
   const handleUploadCustomTune = async () => {
     setUploadingTune(true);
@@ -271,6 +296,13 @@ export function SettingsScreen() {
               </View>
               <Text style={styles.rowLabel}>Quick Capture</Text>
               <Text style={styles.rowValue}>{quickCapture ? 'On' : 'Off'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.row} onPress={handleTogglePersistentTray}>
+              <View style={[styles.rowIconWrap, { backgroundColor: '#6366F120' }]}>
+                <Ionicons name="layers-outline" size={20} color="#6366F1" />
+              </View>
+              <Text style={styles.rowLabel}>Persistent Tray</Text>
+              <Text style={styles.rowValue}>{persistentTray ? 'On' : 'Off'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.row, styles.rowLast]} onPress={() => setShowTunePicker(true)}>
               <View style={[styles.rowIconWrap, { backgroundColor: '#EC489920' }]}>

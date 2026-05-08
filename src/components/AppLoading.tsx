@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import { View, StyleSheet, Animated, Dimensions } from 'react-native';
 import { ThinkoraLogo } from './ThinkoraLogo';
 
 const { width, height } = Dimensions.get('window');
@@ -83,8 +83,6 @@ export function AppLoading() {
         </View>
       </View>
 
-      {/* Bottom branding */}
-      <Text style={styles.version}>v1.0</Text>
     </View>
   );
 }

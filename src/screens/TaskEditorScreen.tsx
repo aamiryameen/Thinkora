@@ -23,6 +23,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Icon } from '../components/Icons';
 import { SubTaskList } from '../components/SubTaskList';
 import { TaskTimer } from '../components/TaskTimer';
+import { estimateTaskDuration, formatMinutes, type TimeEstimate } from '../services/timeEstimateService';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { ReminderTunePicker } from '../components/ReminderTunePicker';
 import { useApp } from '../context/AppContext';
@@ -76,6 +77,7 @@ export function TaskEditorScreen() {
     updateTask,
     deleteTask,
     taskCategories,
+    tasks,
     toggleSubTaskComplete,
     addSubTask,
     deleteSubTask,
@@ -93,6 +95,7 @@ export function TaskEditorScreen() {
   const [priority, setPriority] = useState<TaskPriority>(existing?.priority ?? 'none');
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [subtasks, setSubtasks] = useState(existing?.subtasks ?? []);
+  const [timeEstimate, setTimeEstimate] = useState<TimeEstimate | null>(null);
   const [tuneId, setTuneIdState] = useState<string | null>(null);
   const [showTunePicker, setShowTunePicker] = useState(false);
 
@@ -147,6 +150,16 @@ export function TaskEditorScreen() {
   useEffect(() => {
     if (existing) setSubtasks(existing.subtasks);
   }, [existing?.subtasks]);
+
+  // Compute AI time estimate from title + category vs past tracked tasks
+  useEffect(() => {
+    if (!title || title.trim().length < 3) { setTimeEstimate(null); return; }
+    let cancelled = false;
+    estimateTaskDuration(title, categoryId, tasks).then((est) => {
+      if (!cancelled) setTimeEstimate(est);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [title, categoryId, tasks]);
 
   // Voice recognition
   const startVoice = useCallback(async (target: 'title' | 'notes') => {
@@ -476,31 +489,56 @@ export function TaskEditorScreen() {
     container: { flex: 1, backgroundColor: theme.colors.background },
     header: {
       flexDirection: 'row',
-      justifyContent: 'space-between',
       alignItems: 'center',
+      gap: theme.spacing.md,
       paddingHorizontal: theme.spacing.lg,
       paddingTop: insets.top + theme.spacing.sm,
       paddingBottom: theme.spacing.md,
       backgroundColor: theme.colors.surface,
-      borderBottomWidth: 1,
+      borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: theme.colors.border,
     },
     headerBtn: {
-      paddingVertical: theme.spacing.xs,
-      paddingHorizontal: theme.spacing.md,
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.inputBg,
+    },
+    headerTitle: {
+      ...theme.typography.titleSmall,
+      color: theme.colors.text,
+      flex: 1,
     },
     saveBtn: {
       backgroundColor: theme.colors.primary,
       borderRadius: theme.borderRadius.lg,
-      paddingVertical: theme.spacing.sm,
+      paddingVertical: 10,
       paddingHorizontal: theme.spacing.lg,
+      ...theme.shadows.card,
     },
     saveBtnText: {
       ...theme.typography.button,
       color: '#FFF',
     },
     scroll: { flex: 1 },
-    scrollContent: { padding: theme.spacing.lg, paddingBottom: 100, gap: theme.spacing.lg },
+    scrollContent: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.lg,
+      paddingBottom: 120,
+      gap: theme.spacing.xl,
+    },
+
+    // Title card
+    titleCard: {
+      backgroundColor: theme.colors.cardBg,
+      borderRadius: theme.borderRadius.xl,
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.lg,
+      paddingBottom: theme.spacing.md,
+      ...theme.shadows.card,
+    },
     titleRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -509,27 +547,88 @@ export function TaskEditorScreen() {
     titleInput: {
       ...theme.typography.title,
       color: theme.colors.text,
-      fontSize: 24,
+      fontSize: 26,
+      lineHeight: 32,
       fontWeight: '700',
       padding: 0,
       flex: 1,
+    },
+    titleMicBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.inputBg,
+    },
+    titleMicBtnActive: {
+      backgroundColor: theme.colors.error,
+    },
+
+    // Section header (icon + label) — matches NoteEditor styling
+    sectionTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      marginBottom: theme.spacing.sm,
+    },
+    sectionTitleIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.primaryLight,
+    },
+    sectionTitle: {
+      ...theme.typography.label,
+      color: theme.colors.text,
+      fontWeight: '700',
+      fontSize: 14,
+      letterSpacing: 0.3,
     },
     section: {
       gap: theme.spacing.sm,
     },
     sectionLabel: {
-      ...theme.typography.label,
+      ...theme.typography.overline,
       color: theme.colors.textMuted,
       textTransform: 'uppercase',
-      letterSpacing: 1,
     },
-    row: {
+
+    // Grouped meta card
+    metaCard: {
+      backgroundColor: theme.colors.cardBg,
+      borderRadius: theme.borderRadius.xl,
+      overflow: 'hidden',
+      ...theme.shadows.card,
+    },
+    metaRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: theme.colors.cardBg,
-      borderRadius: theme.borderRadius.lg,
-      padding: theme.spacing.md,
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.md,
       gap: theme.spacing.md,
+      minHeight: 56,
+    },
+    metaRowDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: theme.colors.borderSubtle,
+    },
+    metaIconWrap: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    metaText: {
+      ...theme.typography.body,
+      color: theme.colors.text,
+      flex: 1,
+    },
+    metaPlaceholder: {
+      color: theme.colors.textMuted,
     },
     rowText: {
       ...theme.typography.body,
@@ -547,6 +646,7 @@ export function TaskEditorScreen() {
     clearBtn: {
       padding: 4,
     },
+
     chipRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -554,10 +654,10 @@ export function TaskEditorScreen() {
     },
     chip: {
       paddingHorizontal: theme.spacing.md,
-      paddingVertical: theme.spacing.sm,
+      paddingVertical: 8,
       borderRadius: theme.borderRadius.full,
       backgroundColor: theme.colors.inputBg,
-      borderWidth: 1.5,
+      borderWidth: 1,
       borderColor: 'transparent',
     },
     chipSelected: {
@@ -566,31 +666,55 @@ export function TaskEditorScreen() {
     },
     chipText: {
       ...theme.typography.bodySmall,
-      color: theme.colors.text,
+      color: theme.colors.textSecondary,
       fontWeight: '500',
     },
     chipTextSelected: {
       color: theme.colors.primary,
-      fontWeight: '600',
+      fontWeight: '700',
+    },
+
+    // Notes card with focus styling
+    notesCard: {
+      backgroundColor: theme.colors.cardBg,
+      borderRadius: theme.borderRadius.xl,
+      paddingHorizontal: theme.spacing.lg,
+      paddingTop: theme.spacing.md,
+      paddingBottom: theme.spacing.md,
+      ...theme.shadows.card,
     },
     notesHeader: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      marginBottom: theme.spacing.xs,
+    },
+    notesMicBtn: {
+      width: 30,
+      height: 30,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.inputBg,
+    },
+    notesMicBtnActive: {
+      backgroundColor: theme.colors.error,
     },
     notesInput: {
       ...theme.typography.body,
       color: theme.colors.text,
-      backgroundColor: theme.colors.cardBg,
-      borderRadius: theme.borderRadius.lg,
-      padding: theme.spacing.md,
-      minHeight: 80,
+      paddingHorizontal: 0,
+      paddingVertical: theme.spacing.xs,
+      minHeight: 96,
       textAlignVertical: 'top',
+      lineHeight: 22,
     },
+
     subtaskCard: {
       backgroundColor: theme.colors.cardBg,
-      borderRadius: theme.borderRadius.lg,
+      borderRadius: theme.borderRadius.xl,
       padding: theme.spacing.md,
+      ...theme.shadows.card,
     },
     deleteBtn: {
       flexDirection: 'row',
@@ -644,30 +768,32 @@ export function TaskEditorScreen() {
     aiActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
     aiActionBtn: {
       flexGrow: 1,
-      flexBasis: '48%',
+      flexBasis: '47%',
       flexDirection: 'row',
       alignItems: 'center',
       gap: theme.spacing.sm,
-      paddingVertical: 12,
-      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 14,
+      paddingHorizontal: 14,
       borderRadius: theme.borderRadius.lg,
-      backgroundColor: '#7C3AED10',
-      borderWidth: 1,
-      borderColor: '#7C3AED25',
+      backgroundColor: theme.colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.borderSubtle,
+      ...theme.shadows.subtle,
     },
     aiActionIcon: {
-      width: 28,
-      height: 28,
-      borderRadius: 9,
-      backgroundColor: '#7C3AED20',
+      width: 36,
+      height: 36,
+      borderRadius: 11,
+      backgroundColor: '#7C3AED1A',
       alignItems: 'center',
       justifyContent: 'center',
     },
     aiActionLabel: {
       ...theme.typography.bodySmall,
-      color: '#4C1D95',
+      color: theme.colors.text,
       fontWeight: '700',
       flex: 1,
+      letterSpacing: -0.1,
     },
     aiToneRowCard: {
       flexDirection: 'row',
@@ -820,106 +946,141 @@ export function TaskEditorScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
-          <Icon name="back" size={24} />
+        <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
+          <Icon name="back" size={22} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+        <Text style={styles.headerTitle} numberOfLines={1}>{isNew ? 'New task' : 'Edit task'}</Text>
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
           <Text style={styles.saveBtnText}>Save</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="always">
-        <View style={styles.titleRow}>
-          <TextInput
-            style={styles.titleInput}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Task title"
-            placeholderTextColor={theme.colors.textMuted}
-            autoFocus={isNew}
-          />
-          <Pressable
-            onPress={() => { isListening && voiceTarget === 'title' ? stopVoice() : startVoice('title'); }}
-            hitSlop={16}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: isListening && voiceTarget === 'title' ? theme.colors.error : theme.colors.primary,
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 999,
-            }}
-          >
-            <Ionicons name={isListening && voiceTarget === 'title' ? 'stop' : 'mic'} size={20} color="#FFF" />
-          </Pressable>
+        {/* Title card */}
+        <View style={styles.titleCard}>
+          <View style={styles.titleRow}>
+            <TextInput
+              style={styles.titleInput}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="What do you need to do?"
+              placeholderTextColor={theme.colors.textMuted}
+              autoFocus={isNew}
+              multiline
+            />
+            <Pressable
+              onPress={() => { isListening && voiceTarget === 'title' ? stopVoice() : startVoice('title'); }}
+              hitSlop={12}
+              style={[
+                styles.titleMicBtn,
+                isListening && voiceTarget === 'title' && styles.titleMicBtnActive,
+              ]}
+            >
+              <Ionicons
+                name={isListening && voiceTarget === 'title' ? 'stop' : 'mic-outline'}
+                size={18}
+                color={isListening && voiceTarget === 'title' ? '#FFF' : theme.colors.textSecondary}
+              />
+            </Pressable>
+          </View>
         </View>
 
         {/* Category */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Category</Text>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.sectionTitleIcon}>
+              <Ionicons name="pricetag-outline" size={14} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Category</Text>
+          </View>
           <CategoryPicker categories={taskCategories} selectedId={categoryId} onSelect={setCategoryId} />
         </View>
 
-        {/* Due Date */}
-        <TouchableOpacity style={styles.row} onPress={() => openDatePicker('due')}>
-          <Ionicons name="calendar-outline" size={22} color={theme.colors.primary} />
-          <Text style={[styles.rowText, !dueDate && styles.rowPlaceholder]}>
-            {dueDate ? `Due: ${formatDate(dueDate)}` : 'Due Date'}
-          </Text>
-          {dueDate && (
-            <TouchableOpacity style={styles.clearBtn} onPress={() => setDueDate(null)}>
-              <Ionicons name="close-circle" size={20} color={theme.colors.textMuted} />
-            </TouchableOpacity>
-          )}
-        </TouchableOpacity>
-
-        {/* Reminder */}
-        <TouchableOpacity style={styles.row} onPress={() => openDatePicker('reminder')}>
-          <Ionicons name="alarm-outline" size={22} color={theme.colors.accent} />
-          <Text style={[styles.rowText, !reminderDate && styles.rowPlaceholder]}>
-            {reminderDate ? `Reminder: ${formatDate(reminderDate)} ${formatTime(reminderDate)}` : 'Set reminder'}
-          </Text>
-          {reminderDate && (
-            <TouchableOpacity style={styles.clearBtn} onPress={() => setReminderDate(null)}>
-              <Ionicons name="close-circle" size={20} color={theme.colors.textMuted} />
-            </TouchableOpacity>
-          )}
-        </TouchableOpacity>
-        {reminderDate && (
-          <View style={[styles.chipRow, { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm }]}>
-            <Text style={[styles.chipText, { color: theme.colors.textMuted, marginRight: 4 }]}>Snooze:</Text>
-            {[{ label: '10m', min: 10 }, { label: '30m', min: 30 }, { label: '1h', min: 60 }, { label: '3h', min: 180 }].map((s) => (
-              <TouchableOpacity
-                key={s.label}
-                style={[styles.chip, { borderColor: theme.colors.accent, backgroundColor: theme.colors.accent + '15' }]}
-                onPress={() => setReminderDate((d) => (d ? d + s.min * 60000 : Date.now() + s.min * 60000))}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.chipText, { color: theme.colors.accent, fontWeight: '600' }]}>{s.label}</Text>
-              </TouchableOpacity>
-            ))}
+        {/* Schedule — grouped meta card */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.sectionTitleIcon}>
+              <Ionicons name="calendar-outline" size={14} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Schedule</Text>
           </View>
-        )}
+          <View style={styles.metaCard}>
+            <TouchableOpacity style={styles.metaRow} onPress={() => openDatePicker('due')} activeOpacity={0.7}>
+              <View style={[styles.metaIconWrap, { backgroundColor: theme.colors.primaryLight }]}>
+                <Ionicons name="calendar-outline" size={18} color={theme.colors.primary} />
+              </View>
+              <Text style={[styles.metaText, !dueDate && styles.metaPlaceholder]}>
+                {dueDate ? formatDate(dueDate) : 'Due date'}
+              </Text>
+              {dueDate ? (
+                <TouchableOpacity style={styles.clearBtn} onPress={() => setDueDate(null)} hitSlop={8}>
+                  <Ionicons name="close-circle" size={20} color={theme.colors.textMuted} />
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+              )}
+            </TouchableOpacity>
 
-        {/* Alarm sound picker — only shown when reminder is set */}
-        {reminderDate && (
-          <TouchableOpacity style={styles.row} onPress={() => setShowTunePicker(true)}>
-            <Ionicons name="musical-notes-outline" size={22} color={theme.colors.accent} />
-            <Text style={styles.rowText}>Alarm sound: {tuneLabel}</Text>
-            <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
-          </TouchableOpacity>
-        )}
+            <TouchableOpacity style={[styles.metaRow, styles.metaRowDivider]} onPress={() => openDatePicker('reminder')} activeOpacity={0.7}>
+              <View style={[styles.metaIconWrap, { backgroundColor: theme.colors.accent + '20' }]}>
+                <Ionicons name="alarm-outline" size={18} color={theme.colors.accent} />
+              </View>
+              <Text style={[styles.metaText, !reminderDate && styles.metaPlaceholder]}>
+                {reminderDate ? `${formatDate(reminderDate)} · ${formatTime(reminderDate)}` : 'Reminder'}
+              </Text>
+              {reminderDate ? (
+                <TouchableOpacity style={styles.clearBtn} onPress={() => setReminderDate(null)} hitSlop={8}>
+                  <Ionicons name="close-circle" size={20} color={theme.colors.textMuted} />
+                </TouchableOpacity>
+              ) : (
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+              )}
+            </TouchableOpacity>
+
+            {reminderDate && (
+              <TouchableOpacity style={[styles.metaRow, styles.metaRowDivider]} onPress={() => setShowTunePicker(true)} activeOpacity={0.7}>
+                <View style={[styles.metaIconWrap, { backgroundColor: theme.colors.accent + '20' }]}>
+                  <Ionicons name="musical-notes-outline" size={18} color={theme.colors.accent} />
+                </View>
+                <Text style={styles.metaText}>Alarm sound</Text>
+                <Text style={styles.rowValue}>{tuneLabel}</Text>
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {reminderDate && (
+            <View style={[styles.chipRow, { marginTop: theme.spacing.sm, alignItems: 'center' }]}>
+              <Text style={[styles.chipText, { color: theme.colors.textMuted, marginRight: 2 }]}>Snooze</Text>
+              {[{ label: '10m', min: 10 }, { label: '30m', min: 30 }, { label: '1h', min: 60 }, { label: '3h', min: 180 }].map((s) => (
+                <TouchableOpacity
+                  key={s.label}
+                  style={[styles.chip, { borderColor: theme.colors.accent + '40', backgroundColor: theme.colors.accent + '12' }]}
+                  onPress={() => setReminderDate((d) => (d ? d + s.min * 60000 : Date.now() + s.min * 60000))}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, { color: theme.colors.accent, fontWeight: '700' }]}>{s.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
 
         {/* Repeat */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Repeat</Text>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.sectionTitleIcon}>
+              <Ionicons name="repeat-outline" size={14} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Repeat</Text>
+          </View>
           <View style={styles.chipRow}>
             {REPEAT_OPTIONS.map((opt) => (
               <TouchableOpacity
                 key={opt.value}
                 style={[styles.chip, repeat === opt.value && styles.chipSelected]}
                 onPress={() => setRepeat(opt.value)}
+                activeOpacity={0.75}
               >
                 <Text style={[styles.chipText, repeat === opt.value && styles.chipTextSelected]}>{opt.label}</Text>
               </TouchableOpacity>
@@ -929,54 +1090,81 @@ export function TaskEditorScreen() {
 
         {/* Priority */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Priority</Text>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.sectionTitleIcon}>
+              <Ionicons name="flag-outline" size={14} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Priority</Text>
+          </View>
           <View style={styles.chipRow}>
-            {PRIORITY_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.chip, priority === opt.value && { borderColor: opt.color, backgroundColor: opt.color + '15' }]}
-                onPress={() => setPriority(opt.value)}
-              >
-                <Text style={[styles.chipText, priority === opt.value && { color: opt.color, fontWeight: '600' }]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {PRIORITY_OPTIONS.map((opt) => {
+              const selected = priority === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.chip, selected && { borderColor: opt.color, backgroundColor: opt.color + '18' }]}
+                  onPress={() => setPriority(opt.value)}
+                  activeOpacity={0.75}
+                >
+                  {opt.value !== 'none' && (
+                    <Ionicons
+                      name="flag"
+                      size={11}
+                      color={selected ? opt.color : theme.colors.textMuted}
+                      style={{ marginRight: 6 }}
+                    />
+                  )}
+                  <Text style={[styles.chipText, selected && { color: opt.color, fontWeight: '700' }]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
         {/* Notes */}
         <View style={styles.section}>
-          <View style={styles.notesHeader}>
-            <Text style={styles.sectionLabel}>Notes</Text>
-            <Pressable
-              onPress={() => isListening && voiceTarget === 'notes' ? stopVoice() : startVoice('notes')}
-              hitSlop={16}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                backgroundColor: isListening && voiceTarget === 'notes' ? theme.colors.error : theme.colors.primary,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Ionicons name={isListening && voiceTarget === 'notes' ? 'stop' : 'mic'} size={16} color="#FFF" />
-            </Pressable>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.sectionTitleIcon}>
+              <Ionicons name="document-text-outline" size={14} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Notes</Text>
           </View>
-          <TextInput
-            style={styles.notesInput}
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Add notes..."
-            placeholderTextColor={theme.colors.textMuted}
-            multiline
-          />
+          <View style={styles.notesCard}>
+            <View style={styles.notesHeader}>
+              <Text style={[styles.chipText, { color: theme.colors.textMuted }]}>
+                {notes.length > 0 ? `${notes.length} chars` : 'Optional'}
+              </Text>
+              <Pressable
+                onPress={() => isListening && voiceTarget === 'notes' ? stopVoice() : startVoice('notes')}
+                hitSlop={12}
+                style={[
+                  styles.notesMicBtn,
+                  isListening && voiceTarget === 'notes' && styles.notesMicBtnActive,
+                ]}
+              >
+                <Ionicons
+                  name={isListening && voiceTarget === 'notes' ? 'stop' : 'mic-outline'}
+                  size={15}
+                  color={isListening && voiceTarget === 'notes' ? '#FFF' : theme.colors.textSecondary}
+                />
+              </Pressable>
+            </View>
+            <TextInput
+              style={styles.notesInput}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Add details, context, links…"
+              placeholderTextColor={theme.colors.textMuted}
+              multiline
+            />
+          </View>
         </View>
 
         {/* ── AI Assistant (matches note editor) ── */}
         <View style={styles.aiSectionTitleRow}>
-          <View style={[styles.aiSectionTitleIcon, { backgroundColor: '#7C3AED15' }]}>
+          <View style={[styles.aiSectionTitleIcon, { backgroundColor: '#7C3AED22' }]}>
             <Ionicons name="color-wand-outline" size={16} color="#7C3AED" />
           </View>
           <Text style={styles.aiSectionTitle}>AI Assistant</Text>
@@ -990,7 +1178,7 @@ export function TaskEditorScreen() {
                 onPress={() => runTextAiAction('Summary', (signal) => summarizeNote(settings.geminiApiKey, notes, signal))}
               >
                 <View style={styles.aiActionIcon}>
-                  <Ionicons name="document-text-outline" size={16} color="#7C3AED" />
+                  <Ionicons name="document-text-outline" size={18} color="#A78BFA" />
                 </View>
                 <Text style={styles.aiActionLabel}>Summarize</Text>
               </TouchableOpacity>
@@ -1000,7 +1188,7 @@ export function TaskEditorScreen() {
                 onPress={() => runTextAiAction('Rewrite', (signal) => rewriteNote(settings.geminiApiKey, notes, signal))}
               >
                 <View style={styles.aiActionIcon}>
-                  <Ionicons name="create-outline" size={16} color="#7C3AED" />
+                  <Ionicons name="create-outline" size={18} color="#A78BFA" />
                 </View>
                 <Text style={styles.aiActionLabel}>Rewrite</Text>
               </TouchableOpacity>
@@ -1010,7 +1198,7 @@ export function TaskEditorScreen() {
                 onPress={() => runTextAiAction('Grammar fix', (signal) => fixGrammar(settings.geminiApiKey, notes, signal))}
               >
                 <View style={styles.aiActionIcon}>
-                  <Ionicons name="checkmark-done-outline" size={16} color="#7C3AED" />
+                  <Ionicons name="checkmark-done-outline" size={18} color="#A78BFA" />
                 </View>
                 <Text style={styles.aiActionLabel}>Fix grammar</Text>
               </TouchableOpacity>
@@ -1020,7 +1208,7 @@ export function TaskEditorScreen() {
                 onPress={() => setAiToneMenuOpen((v) => !v)}
               >
                 <View style={styles.aiActionIcon}>
-                  <Ionicons name="color-palette-outline" size={16} color="#7C3AED" />
+                  <Ionicons name="color-palette-outline" size={18} color="#A78BFA" />
                 </View>
                 <Text style={styles.aiActionLabel}>Change tone</Text>
               </TouchableOpacity>
@@ -1048,7 +1236,17 @@ export function TaskEditorScreen() {
 
         {/* Sub-tasks */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Sub-tasks</Text>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.sectionTitleIcon}>
+              <Ionicons name="list-outline" size={14} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Sub-tasks</Text>
+            {subtasks.length > 0 && (
+              <Text style={[styles.chipText, { color: theme.colors.textMuted, marginLeft: 4 }]}>
+                {subtasks.filter((s) => s.completed).length}/{subtasks.length}
+              </Text>
+            )}
+          </View>
           <View style={styles.subtaskCard}>
             <SubTaskList
               subtasks={subtasks}
@@ -1066,6 +1264,28 @@ export function TaskEditorScreen() {
             <Text style={styles.suggestBtnText}>Suggest subtasks with AI</Text>
           </TouchableOpacity>
         </View>
+
+        {/* AI Time Estimate */}
+        {timeEstimate && timeEstimate.sampleCount > 0 && (
+          <View style={styles.section}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 12,
+              backgroundColor: theme.colors.primary + '12',
+              borderRadius: 12, padding: 14,
+              borderLeftWidth: 4, borderLeftColor: theme.colors.primary,
+            }}>
+              <Ionicons name="hourglass-outline" size={22} color={theme.colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: theme.colors.text }}>
+                  Estimated: {formatMinutes(timeEstimate.minutes)}
+                </Text>
+                <Text style={{ fontSize: 11, color: theme.colors.textMuted, marginTop: 2 }}>
+                  {timeEstimate.rationale}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Time Tracking — only for existing tasks (needs an id) */}
         {!isNew && existing && (
