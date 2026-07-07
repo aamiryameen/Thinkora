@@ -14,7 +14,7 @@ interface Props {
   palette?: { bg: string; accent: string };
 }
 
-export function TaskCard({ task, category, onToggle, onPress, onLongPress, palette }: Props) {
+function TaskCardImpl({ task, category, onToggle, onPress, onLongPress, palette }: Props) {
   const { theme } = useTheme();
 
   const dueDateLabel = useMemo(() => {
@@ -168,3 +168,15 @@ export function TaskCard({ task, category, onToggle, onPress, onLongPress, palet
     </TouchableOpacity>
   );
 }
+
+/** Memoized — re-renders only when task fields, category, or palette change.
+ *  This is the hottest component in the app (rendered N times in every list)
+ *  so it deserves a custom equality check that ignores parent re-renders. */
+export const TaskCard = React.memo(TaskCardImpl, (prev, next) => (
+  prev.task === next.task &&
+  prev.category === next.category &&
+  prev.palette === next.palette &&
+  prev.onToggle === next.onToggle &&
+  prev.onPress === next.onPress &&
+  prev.onLongPress === next.onLongPress
+));

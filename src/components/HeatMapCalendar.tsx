@@ -25,7 +25,7 @@ function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function HeatMapCalendar({ data, onDayPress, weeks = 26, color }: Props) {
+function HeatMapCalendarImpl({ data, onDayPress, weeks = 26, color }: Props) {
   const { theme } = useTheme();
   const cellColor = color ?? theme.colors.primary;
 
@@ -183,3 +183,5 @@ export function HeatMapCalendar({ data, onDayPress, weeks = 26, color }: Props) 
     </View>
   );
 }
+
+export const HeatMapCalendar = React.memo(HeatMapCalendarImpl);

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { storage } from '../services/storage';
 import {
@@ -25,8 +25,18 @@ import {
   recordActivity,
   checkStreakOnAppOpen,
   loadStreak,
+  repairStreak,
   type StreakData,
 } from '../services/streakService';
+import {
+  scheduleStreakNudge,
+  scheduleWeeklyRecap,
+} from '../services/streakNotificationService';
+import { schedulePulseNotification, loadPulseState } from '../services/dailyPulseService';
+import { evaluateAndScheduleComeback } from '../services/comebackService';
+import { shouldShowBrewNow } from '../services/morningBrewService';
+import { navigateTo } from '../services/navigationService';
+import { detectDeviceCountry } from '../services/holidayService';
 
 // ─── Default task categories ────────────────────────
 const DEFAULT_CATEGORIES: TaskCategory[] = [
@@ -123,6 +133,7 @@ interface AppContextValue extends AppState {
   // Streak
   streak: StreakData;
   recordStreakActivity: () => Promise<number | null>;
+  repairCurrentStreak: () => Promise<boolean>;
 
   // Cloud sync
   restoreData: (data: {
@@ -162,6 +173,8 @@ const defaultSettings: AppSettings = {
   themeColorId: 'default',
   pomodoroSettings: { workMinutes: 25, shortBreakMinutes: 5, longBreakMinutes: 15, sessionsBeforeLongBreak: 4 },
   geminiApiKey: null,
+  holidayCountry: '',
+  holidayNotificationsEnabled: true,
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -179,6 +192,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [streak, setStreak] = useState<StreakData>({
     currentStreak: 0, longestStreak: 0, lastActiveDate: '',
     activeDates: [], freezesUsedThisWeek: 0, weekStartDate: '', milestones: [],
+    streakBrokenAt: null, brokenStreakLength: 0, repairsUsedThisMonth: 0, monthStartKey: '',
   });
   const [loaded, setLoaded] = useState(false);
 
@@ -203,7 +217,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setReminders(r);
         setTasks(tk);
         setTaskCategories(tc.length > 0 ? tc : DEFAULT_CATEGORIES);
-        setSettings(s);
+        // Auto-detect country on first launch (or after upgrade) when blank.
+        const hydratedSettings: AppSettings = s.holidayCountry
+          ? s
+          : { ...s, holidayCountry: detectDeviceCountry() };
+        setSettings(hydratedSettings);
         // Load and check streak
         const streakData = await checkStreakOnAppOpen();
         setStreak(streakData);
@@ -278,38 +296,96 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useDebouncedSave(loaded, taskCategories, saveCategories);
   useDebouncedSave(loaded, settings, saveSettings, 1500); // settings change less often
 
-  // Side-effects — immediate (lightweight, no DB writes)
-  useEffect(() => { if (loaded) syncWidgetData(tasks, []); }, [loaded, tasks]);
-  useEffect(() => { if (loaded) syncSmartDeadlineReminders(tasks).catch(() => {}); }, [loaded, tasks]);
-  useEffect(() => { if (loaded) scheduleOverdueCheck(tasks).catch(() => {}); }, [loaded, tasks]);
+  // Side-effects driven by `tasks` — debounced 800ms so a single edit
+  // doesn't fire 3 native-bridge calls per task in the array. Without this
+  // debounce, toggling one task triggers ~50+ notifee calls on a list of
+  // 50 tasks (one per task in syncSmartDeadlineReminders).
+  const taskSideEffects = useCallback(async (latestTasks: Task[]) => {
+    syncWidgetData(latestTasks, []);
+    syncSmartDeadlineReminders(latestTasks).catch(() => {});
+    scheduleOverdueCheck(latestTasks).catch(() => {});
+  }, []);
+  useDebouncedSave(loaded, tasks, taskSideEffects, 800);
   // Schedule 8 PM evening reflection notification (once on app load)
   useEffect(() => { if (loaded) scheduleEveningReflection().catch(() => {}); }, [loaded]);
-
-  // Foreground geofence watcher — fires location reminders when in range.
+  // Streak: 8 PM "don't break it" nudge + Sunday weekly recap.
   useEffect(() => {
     if (!loaded) return;
+    scheduleStreakNudge().catch(() => {});
+    scheduleWeeklyRecap().catch(() => {});
+  }, [loaded, streak.currentStreak, streak.lastActiveDate]);
+  // Daily Pulse: 8 PM evening reminder (idempotent re-schedule on every load).
+  useEffect(() => { if (loaded) schedulePulseNotification().catch(() => {}); }, [loaded]);
+
+  // Comeback Engine — re-engagement notification when user has been away.
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => {
+      try {
+        const [pulseState, journalEntries] = await Promise.all([
+          loadPulseState(),
+          storage.getJournalEntries(),
+        ]);
+        await evaluateAndScheduleComeback({
+          streak,
+          pulse: pulseState,
+          journalEntries,
+        });
+      } catch {
+        // non-fatal
+      }
+    })();
+  }, [loaded, streak.lastActiveDate]);
+
+  // Morning Brew — auto-show once per morning between 6 AM and 10 AM.
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => {
+      try {
+        if (await shouldShowBrewNow()) {
+          // Slight delay so the home screen finishes mounting first.
+          setTimeout(() => navigateTo('MorningBrew'), 600);
+        }
+      } catch {}
+    })();
+  }, [loaded]);
+
+  // Foreground geofence watcher. Only restart when the *count* of location
+  // reminders changes, not on every reminders-array reference change. The
+  // watcher's getter (remindersRef) always reads the freshest list.
+  const remindersRef = useRef(reminders);
+  remindersRef.current = reminders;
+  const locationReminderCount = useMemo(
+    () => reminders.filter(r => r.triggerType === 'location' && r.location).length,
+    [reminders],
+  );
+  useEffect(() => {
+    if (!loaded) return;
+    if (locationReminderCount === 0) return;
     try {
       const { startLocationWatch, stopLocationWatch } = require('../services/locationReminderService');
-      const hasLocationReminders = reminders.some(r => r.triggerType === 'location' && r.location);
-      if (hasLocationReminders) {
-        startLocationWatch(() => reminders);
-        return () => stopLocationWatch();
-      }
+      startLocationWatch(() => remindersRef.current);
+      return () => stopLocationWatch();
     } catch {}
-  }, [loaded, reminders]);
+  }, [loaded, locationReminderCount]);
 
-  // Refresh persistent notification tray when relevant state changes.
-  useEffect(() => {
-    if (!loaded) return;
+  // Persistent notification tray — debounced so toggling tasks rapidly
+  // doesn't redraw the system notification on every keystroke.
+  const trayInputs = useMemo(
+    () => ({ tasks, streakDays: streak.currentStreak }),
+    [tasks, streak.currentStreak],
+  );
+  const refreshTray = useCallback(async (input: { tasks: Task[]; streakDays: number }) => {
     try {
       const { refreshPersistentTray } = require('../services/persistentTrayService');
-      const pending = tasks.filter(t => !t.completed);
+      const pending = input.tasks.filter(t => !t.completed);
       const topTask = pending.find(t => t.priority === 'high') ?? pending.find(t => t.dueDate) ?? pending[0];
-      refreshPersistentTray({
-        topTask, streakDays: streak.currentStreak, pendingCount: pending.length,
-      }).catch(() => {});
+      await refreshPersistentTray({
+        topTask, streakDays: input.streakDays, pendingCount: pending.length,
+      });
     } catch {}
-  }, [loaded, tasks, streak.currentStreak]);
+  }, []);
+  useDebouncedSave(loaded, trayInputs, refreshTray, 1000);
 
   // Check streak rewards when current streak changes.
   useEffect(() => {
@@ -649,12 +725,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return list;
   }, [tasks, taskFilter]);
 
+  // Pre-bucket tasks by day-key once per tasks change. Calendar/agenda views
+  // hit this many times per render; an O(1) Map lookup is dramatically
+  // faster than re-filtering the whole array per day.
+  const tasksByDateKey = useMemo(() => {
+    const m = new Map<string, Task[]>();
+    for (const t of tasks) {
+      if (!t.dueDate) continue;
+      const d = new Date(t.dueDate);
+      const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const arr = m.get(k);
+      if (arr) arr.push(t);
+      else m.set(k, [t]);
+    }
+    return m;
+  }, [tasks]);
+
   const tasksForDate = useCallback((date: number) => {
     const d = new Date(date);
-    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-    const dayEnd = dayStart + 86400000;
-    return tasks.filter((t) => t.dueDate && t.dueDate >= dayStart && t.dueDate < dayEnd);
-  }, [tasks]);
+    const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    return tasksByDateKey.get(k) ?? [];
+  }, [tasksByDateKey]);
 
   const taskStats = useMemo<TaskStats>(() => {
     const completed = tasks.filter((t) => t.completed).length;
@@ -703,9 +794,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const { streak: updated, newMilestone } = await recordActivity();
       setStreak(updated);
+      // Active today → cancel any pending 8 PM nudge.
+      scheduleStreakNudge().catch(() => {});
       return newMilestone;
     } catch {
       return null;
+    }
+  }, []);
+
+  const repairCurrentStreak = useCallback(async (): Promise<boolean> => {
+    try {
+      const updated = await repairStreak();
+      if (!updated) return false;
+      setStreak(updated);
+      scheduleStreakNudge().catch(() => {});
+      return true;
+    } catch {
+      return false;
     }
   }, []);
 
@@ -723,7 +828,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
-      updateSettings, recordStreakActivity, restoreData,
+      updateSettings, recordStreakActivity, repairCurrentStreak, restoreData,
     }),
     [
       notes, folders, tags, reminders, filter, loaded,
@@ -737,7 +842,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
-      updateSettings, recordStreakActivity, restoreData,
+      updateSettings, recordStreakActivity, repairCurrentStreak, restoreData,
     ]
   );
 

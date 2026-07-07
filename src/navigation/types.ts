@@ -36,6 +36,11 @@ export type RootStackParamList = {
   Gantt: undefined;
   ShareProgress: undefined;
   Sketch: undefined;
+  Calendar: undefined;
+  DailyPulse: undefined;
+  TodayCard: undefined;
+  MorningBrew: undefined;
+  VoiceCapture: undefined;
 };
 
 export type NoteEditorParams = {

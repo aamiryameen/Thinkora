@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Modal, FlatList, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +28,7 @@ import {
   type CustomTune,
 } from '../services/soundService';
 import { pickAndAddCustomTune } from '../services/customTuneService';
+import { SUPPORTED_COUNTRIES, countryName } from '../services/holidayService';
 import { PinSetupScreen } from './AppLockScreen';
 import type { RootStackParamList } from '../navigation/types';
 
@@ -54,6 +55,16 @@ export function SettingsScreen() {
   const [playingTuneId, setPlayingTuneId] = useState<string | null>(null);
   const [customTunes, setCustomTunes] = useState<CustomTune[]>([]);
   const [uploadingTune, setUploadingTune] = useState(false);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+
+  const filteredCountries = useMemo(() => {
+    const q = countrySearch.trim().toLowerCase();
+    if (!q) return SUPPORTED_COUNTRIES;
+    return SUPPORTED_COUNTRIES.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q),
+    );
+  }, [countrySearch]);
 
   useEffect(() => {
     isQuickCaptureEnabled().then(setQuickCapture);
@@ -311,6 +322,44 @@ export function SettingsScreen() {
               <Text style={styles.rowLabel}>Reminder Sound</Text>
               <Text style={styles.rowValue}>{selectedTune.name}</Text>
               <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Calendar */}
+        <View>
+          <Text style={styles.sectionTitle}>Calendar</Text>
+          <View style={styles.card}>
+            <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Calendar')}>
+              <View style={[styles.rowIconWrap, { backgroundColor: '#EF444420' }]}>
+                <Ionicons name="calendar-outline" size={20} color="#EF4444" />
+              </View>
+              <Text style={styles.rowLabel}>Open Calendar</Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.row} onPress={() => setShowCountryPicker(true)}>
+              <View style={[styles.rowIconWrap, { backgroundColor: '#10B98120' }]}>
+                <Ionicons name="flag-outline" size={20} color="#10B981" />
+              </View>
+              <Text style={styles.rowLabel}>Holiday Country</Text>
+              <Text style={styles.rowValue}>
+                {settings.holidayCountry ? countryName(settings.holidayCountry) : 'Auto'}
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.row, styles.rowLast]}
+              onPress={() => updateSettings({
+                holidayNotificationsEnabled: !settings.holidayNotificationsEnabled,
+              })}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: '#F59E0B20' }]}>
+                <Ionicons name="notifications-outline" size={20} color="#F59E0B" />
+              </View>
+              <Text style={styles.rowLabel}>Holiday Notifications</Text>
+              <Text style={styles.rowValue}>
+                {settings.holidayNotificationsEnabled ? 'On (1 day before)' : 'Off'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -589,6 +638,79 @@ export function SettingsScreen() {
               );
             })}
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Holiday Country Picker Modal */}
+      <Modal
+        visible={showCountryPicker}
+        animationType="slide"
+        onRequestClose={() => setShowCountryPicker(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: theme.colors.background, paddingTop: insets.top }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12,
+            borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border,
+            backgroundColor: theme.colors.surface,
+          }}>
+            <TouchableOpacity
+              onPress={() => { setShowCountryPicker(false); setCountrySearch(''); }}
+              style={{ width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.inputBg, marginRight: 12 }}
+            >
+              <Ionicons name="close" size={20} color={theme.colors.text} />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: theme.colors.text, flex: 1 }}>
+              Holiday Country
+            </Text>
+          </View>
+          <TextInput
+            value={countrySearch}
+            onChangeText={setCountrySearch}
+            placeholder="Search country..."
+            placeholderTextColor={theme.colors.textMuted}
+            autoCorrect={false}
+            autoCapitalize="none"
+            style={{
+              backgroundColor: theme.colors.inputBg,
+              borderRadius: theme.borderRadius.lg,
+              paddingHorizontal: theme.spacing.md,
+              paddingVertical: 10,
+              margin: theme.spacing.lg,
+              color: theme.colors.text,
+            }}
+          />
+          <FlatList
+            data={filteredCountries}
+            keyExtractor={(c) => c.code}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => {
+              const isSelected = item.code === settings.holidayCountry;
+              return (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md,
+                    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border,
+                  }}
+                  onPress={() => {
+                    updateSettings({ holidayCountry: item.code });
+                    setShowCountryPicker(false);
+                    setCountrySearch('');
+                  }}
+                >
+                  <Text style={{ ...theme.typography.body, color: theme.colors.text, flex: 1 }}>
+                    {item.name}
+                  </Text>
+                  <Text style={{ ...theme.typography.caption, color: theme.colors.textMuted, marginRight: theme.spacing.sm }}>
+                    {item.code}
+                  </Text>
+                  {isSelected && (
+                    <Ionicons name="checkmark" size={18} color={theme.colors.primary} />
+                  )}
+                </TouchableOpacity>
+              );
+            }}
+          />
         </View>
       </Modal>
     </View>

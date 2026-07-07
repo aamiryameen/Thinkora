@@ -249,4 +249,8 @@ export interface AppSettings {
   pomodoroSettings: PomodoroSettings;
   /** User-provided Gemini API key. Stored locally on-device only. */
   geminiApiKey: string | null;
+  /** ISO 3166-1 alpha-2 code used to fetch public holidays for the calendar. */
+  holidayCountry: string;
+  /** Whether to schedule a 1-day-before notification for each public holiday. */
+  holidayNotificationsEnabled: boolean;
 }

@@ -110,6 +110,7 @@ export function TaskEditorScreen() {
   const [subtaskSuggestions, setSubtaskSuggestions] = useState<string[] | null>(null);
   const [subtaskLoading, setSubtaskLoading] = useState(false);
   const [subtaskError, setSubtaskError] = useState<string | null>(null);
+  const [subtaskSource, setSubtaskSource] = useState<'proxy' | 'user-key' | 'heuristic' | null>(null);
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set());
   const aiAbortRef = useRef<AbortController | null>(null);
   const lastAiRunRef = useRef<{
@@ -444,11 +445,13 @@ export function TaskEditorScreen() {
     setSubtaskLoading(true);
     setSubtaskError(null);
     setSubtaskSuggestions(null);
+    setSubtaskSource(null);
     setSelectedSuggestions(new Set());
     try {
       const out = await generateSubtasks(settings.geminiApiKey, descriptor, ctrl.signal);
       if (ctrl.signal.aborted) return;
       setSubtaskSuggestions(out.subtasks);
+      setSubtaskSource(out.source);
       // Preselect all by default
       setSelectedSuggestions(new Set(out.subtasks.map((_, i) => i)));
     } catch (e: any) {
@@ -465,6 +468,7 @@ export function TaskEditorScreen() {
     aiAbortRef.current = null;
     setSubtaskLoading(false);
     setSubtaskSuggestions(null);
+    setSubtaskSource(null);
     setSubtaskError(null);
     setSelectedSuggestions(new Set());
   }, []);
@@ -651,6 +655,28 @@ export function TaskEditorScreen() {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: theme.spacing.sm,
+    },
+    scrollChipRow: {
+      flexDirection: 'row',
+      gap: theme.spacing.sm,
+      paddingRight: theme.spacing.sm,
+    },
+
+    // Priority — 4 equal-width segments, never wraps
+    priorityRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    priorityCell: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 10,
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: theme.colors.inputBg,
+      borderWidth: 1.5,
+      borderColor: 'transparent',
     },
     chip: {
       paddingHorizontal: theme.spacing.md,
@@ -918,6 +944,23 @@ export function TaskEditorScreen() {
     aiBtnSecondary: { backgroundColor: theme.colors.inputBg },
     aiBtnSecondaryText: { ...theme.typography.button, color: theme.colors.text, fontWeight: '600' },
 
+    heuristicHint: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      borderRadius: theme.borderRadius.md,
+      backgroundColor: theme.colors.inputBg,
+      marginBottom: 10,
+    },
+    heuristicHintText: {
+      ...theme.typography.caption,
+      color: theme.colors.textMuted,
+      flex: 1,
+      fontStyle: 'italic',
+    },
+
     // ── Subtask suggestion row ────────────────────────────────────
     suggestionRow: {
       flexDirection: 'row',
@@ -1074,7 +1117,11 @@ export function TaskEditorScreen() {
             </View>
             <Text style={styles.sectionTitle}>Repeat</Text>
           </View>
-          <View style={styles.chipRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.scrollChipRow}
+          >
             {REPEAT_OPTIONS.map((opt) => (
               <TouchableOpacity
                 key={opt.value}
@@ -1085,7 +1132,7 @@ export function TaskEditorScreen() {
                 <Text style={[styles.chipText, repeat === opt.value && styles.chipTextSelected]}>{opt.label}</Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         </View>
 
         {/* Priority */}
@@ -1096,25 +1143,36 @@ export function TaskEditorScreen() {
             </View>
             <Text style={styles.sectionTitle}>Priority</Text>
           </View>
-          <View style={styles.chipRow}>
+          <View style={styles.priorityRow}>
             {PRIORITY_OPTIONS.map((opt) => {
               const selected = priority === opt.value;
               return (
                 <TouchableOpacity
                   key={opt.value}
-                  style={[styles.chip, selected && { borderColor: opt.color, backgroundColor: opt.color + '18' }]}
+                  style={[
+                    styles.priorityCell,
+                    selected && {
+                      borderColor: opt.color,
+                      backgroundColor: opt.color + '18',
+                    },
+                  ]}
                   onPress={() => setPriority(opt.value)}
                   activeOpacity={0.75}
                 >
                   {opt.value !== 'none' && (
                     <Ionicons
                       name="flag"
-                      size={11}
+                      size={12}
                       color={selected ? opt.color : theme.colors.textMuted}
-                      style={{ marginRight: 6 }}
+                      style={{ marginRight: 4 }}
                     />
                   )}
-                  <Text style={[styles.chipText, selected && { color: opt.color, fontWeight: '700' }]}>
+                  <Text
+                    style={[
+                      styles.chipText,
+                      selected && { color: opt.color, fontWeight: '700' },
+                    ]}
+                  >
                     {opt.label}
                   </Text>
                 </TouchableOpacity>
@@ -1433,6 +1491,14 @@ export function TaskEditorScreen() {
                 </View>
               ) : subtaskSuggestions ? (
                 <>
+                  {subtaskSource === 'heuristic' && (
+                    <View style={styles.heuristicHint}>
+                      <Ionicons name="information-circle-outline" size={14} color={theme.colors.textMuted} />
+                      <Text style={styles.heuristicHintText}>
+                        Generated offline. Add a Gemini key in Settings for smarter suggestions.
+                      </Text>
+                    </View>
+                  )}
                   {subtaskSuggestions.map((s, i) => {
                     const on = selectedSuggestions.has(i);
                     return (

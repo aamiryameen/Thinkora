@@ -157,85 +157,28 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         container: { flex: 1 },
         fallback: { flex: 1 },
 
-        /* ── Cinematic cover band ─────────────────────── */
+        /* ── Minimal header strip ─────────────────────── */
         cover: {
-          height: 96,
-          width: '100%',
-          backgroundColor: theme.colors.primary + '12',
-          overflow: 'hidden',
-        },
-        coverGradTop: {
-          position: 'absolute',
-          top: 0, left: 0, right: 0, height: '60%',
-          backgroundColor: theme.colors.primary + '1A',
-        },
-        coverBlob1: {
-          position: 'absolute',
-          top: -60, left: -40,
-          width: 200, height: 200,
-          borderRadius: 100,
-          backgroundColor: theme.colors.primary + '26',
-        },
-        coverBlob2: {
-          position: 'absolute',
-          top: -30, right: -30,
-          width: 160, height: 160,
-          borderRadius: 80,
-          backgroundColor: theme.colors.accent + '2A',
-        },
-        coverBlob3: {
-          position: 'absolute',
-          bottom: -40, left: '40%',
-          width: 130, height: 130,
-          borderRadius: 65,
-          backgroundColor: theme.colors.primary + '18',
-        },
-        coverDateRow: {
-          position: 'absolute',
-          left: theme.spacing.lg,
-          right: theme.spacing.lg,
-          top: theme.spacing.md,
+          paddingHorizontal: theme.spacing.lg,
+          paddingTop: theme.spacing.md,
+          paddingBottom: theme.spacing.sm,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
         },
-        coverEyebrow: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 6,
-          paddingHorizontal: 10,
-          paddingVertical: 5,
-          borderRadius: theme.borderRadius.full,
-          backgroundColor: theme.colors.surface,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: theme.colors.border,
-        },
-        coverEyebrowText: {
-          fontSize: 10,
-          fontWeight: '800',
-          letterSpacing: 1,
-          color: theme.colors.primary,
-          textTransform: 'uppercase',
-        },
         coverDateText: {
           fontSize: 11,
           fontWeight: '700',
-          color: theme.colors.textSecondary,
-          letterSpacing: 0.4,
+          color: theme.colors.textMuted,
+          letterSpacing: 0.6,
           textTransform: 'uppercase',
         },
-        coverWatermark: {
-          position: 'absolute',
-          right: -10, bottom: -22,
-          opacity: 0.12,
-        },
 
-        /* Title section overlaps the cover for a "magazine cover" feel */
+        /* Title section — clean, no overlap with the header */
         titleSection: {
-          marginTop: -18,
           paddingHorizontal: theme.spacing.lg,
-          paddingTop: 0,
-          paddingBottom: theme.spacing.xs,
+          paddingTop: theme.spacing.xs,
+          paddingBottom: theme.spacing.sm,
         },
         titleRow: {
           flexDirection: 'row',
@@ -244,22 +187,22 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         },
         titleInput: {
           flex: 1,
-          fontSize: 30,
-          lineHeight: 36,
+          fontSize: 28,
+          lineHeight: 34,
           fontWeight: '800',
-          letterSpacing: -0.8,
-          paddingVertical: theme.spacing.xs,
+          letterSpacing: -0.6,
+          paddingVertical: 6,
           color: theme.colors.text,
         },
         accentLineWrap: {
-          height: 4,
-          marginTop: 4,
-          marginBottom: 6,
+          height: 3,
+          marginTop: 8,
+          marginBottom: 4,
           borderRadius: 2,
           overflow: 'hidden',
-          backgroundColor: theme.colors.primary + '1A',
+          backgroundColor: theme.colors.primary + '14',
           alignSelf: 'flex-start',
-          width: 60,
+          width: 48,
         },
         accentLineFill: {
           height: '100%',
@@ -269,11 +212,10 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         },
         subline: {
           fontSize: 13,
-          fontWeight: '600',
+          fontWeight: '500',
           color: theme.colors.textMuted,
-          fontStyle: 'italic',
-          marginTop: 2,
-          marginBottom: 4,
+          marginTop: 6,
+          marginBottom: 2,
           letterSpacing: 0.1,
         },
 
@@ -316,27 +258,13 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
           color: theme.colors.primary,
         },
 
-        /* Decorative separator */
-        sepWrap: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: theme.spacing.sm,
-          paddingHorizontal: theme.spacing.lg,
-          marginTop: 6,
-          marginBottom: 4,
-        },
+        /* Thin divider between title block and editor body */
         sepLine: {
-          flex: 1,
           height: StyleSheet.hairlineWidth,
           backgroundColor: theme.colors.borderSubtle,
-        },
-        sepGlyph: {
-          width: 24, height: 24,
-          borderRadius: 12,
-          alignItems: 'center', justifyContent: 'center',
-          backgroundColor: theme.colors.primary + '14',
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: theme.colors.primary + '24',
+          marginHorizontal: theme.spacing.lg,
+          marginTop: theme.spacing.xs,
+          marginBottom: theme.spacing.sm,
         },
 
         /* Floating dock-style toolbar */
@@ -425,23 +353,16 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
     [theme]
   );
 
-  /** Decorative top cover with gradient blobs and a quill watermark. */
+  /** Minimal header — just a tiny live "auto-saved" status + the date. */
   const Cover = () => (
     <View style={styles.cover}>
-      <View style={styles.coverGradTop} />
-      <View style={styles.coverBlob1} />
-      <View style={styles.coverBlob2} />
-      <View style={styles.coverBlob3} />
-      <View style={styles.coverWatermark}>
-        <Ionicons name="create-outline" size={120} color={theme.colors.primary} />
+      <View style={[styles.metaChip, styles.metaChipPrimary]}>
+        <View style={styles.metaDotLive} />
+        <Text style={[styles.metaChipText, styles.metaChipTextPrimary]}>
+          {wordCount > 0 ? 'Auto-saved' : 'New draft'}
+        </Text>
       </View>
-      <View style={styles.coverDateRow}>
-        <View style={styles.coverEyebrow}>
-          <Ionicons name="sparkles" size={10} color={theme.colors.primary} />
-          <Text style={styles.coverEyebrowText}>Composing</Text>
-        </View>
-        <Text style={styles.coverDateText}>{todayLabel}</Text>
-      </View>
+      <Text style={styles.coverDateText}>{todayLabel}</Text>
     </View>
   );
 
@@ -465,28 +386,8 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
   const SublineHint = () =>
     !title ? <Text style={styles.subline}>Give your thoughts a name…</Text> : null;
 
-  /** Compact status row — just the auto-save indicator. */
-  const MetaStrip = () => (
-    <View style={styles.metaRow}>
-      <View style={[styles.metaChip, styles.metaChipPrimary]}>
-        <View style={styles.metaDotLive} />
-        <Text style={[styles.metaChipText, styles.metaChipTextPrimary]}>
-          {wordCount > 0 ? 'Auto-saved' : 'New draft'}
-        </Text>
-      </View>
-    </View>
-  );
-
-  /** Decorative separator with a centered diamond glyph. */
-  const Separator = () => (
-    <View style={styles.sepWrap}>
-      <View style={styles.sepLine} />
-      <View style={styles.sepGlyph}>
-        <Ionicons name="diamond-outline" size={11} color={theme.colors.primary} />
-      </View>
-      <View style={styles.sepLine} />
-    </View>
-  );
+  /** Thin separator below the title block. */
+  const Separator = () => <View style={styles.sepLine} />;
 
   /** Floating dock toolbar with the mic on the right. */
   const Dock = ({ active, onPress }: { active: boolean; onPress?: () => void }) => (
@@ -561,7 +462,6 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
           <AccentLine />
           <SublineHint />
         </View>
-        <MetaStrip />
         <Separator />
         <TextInput
           style={styles.fallbackBody}
@@ -595,7 +495,6 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         <AccentLine />
         <SublineHint />
       </View>
-      <MetaStrip />
       <Separator />
       <Dock active={contentVoiceActive} onPress={onContentVoicePress} />
       <RichEditor

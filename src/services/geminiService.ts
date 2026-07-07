@@ -303,26 +303,130 @@ export async function generateSubtasks(
   userApiKey: string | null,
   taskDescription: string,
   signal?: AbortSignal,
-): Promise<{ subtasks: string[]; usage: AiUsage | null; source: 'proxy' | 'user-key' }> {
-  const result = await runAi({
-    userApiKey,
-    action: 'subtasks',
-    text: taskDescription,
-    signal,
-  });
-  const subtasks = result.text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    // Strip leading bullet, dash, asterisk, or number+dot/paren
-    .map((l) => l.replace(/^[-*•]\s+/, '').replace(/^\d+[.)]\s+/, '').trim())
-    .filter((l) => l.length > 0 && l.length <= 120)
-    // Ignore obvious preamble like "Here are the subtasks:" — usually ends with colon
-    .filter((l) => !/^(here (are|is)|sure,?|okay,?|these are)/i.test(l))
-    .filter((l) => !l.endsWith(':'));
+): Promise<{ subtasks: string[]; usage: AiUsage | null; source: 'proxy' | 'user-key' | 'heuristic' }> {
+  // Try AI first. If anything fails (no key, proxy down, parse error, blocked
+  // content), fall back to a heuristic split so the user is never blocked.
+  try {
+    const result = await runAi({
+      userApiKey,
+      action: 'subtasks',
+      text: taskDescription,
+      signal,
+    });
+    const subtasks = result.text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .map((l) => l.replace(/^[-*•]\s+/, '').replace(/^\d+[.)]\s+/, '').trim())
+      .filter((l) => l.length > 0 && l.length <= 120)
+      .filter((l) => !/^(here (are|is)|sure,?|okay,?|these are)/i.test(l))
+      .filter((l) => !l.endsWith(':'));
 
-  if (subtasks.length === 0) {
-    throw new GeminiError("The AI didn't return usable subtasks. Please try again.", 'unknown');
+    if (subtasks.length > 0) {
+      return { subtasks: subtasks.slice(0, 8), usage: result.usage, source: result.source };
+    }
+    // AI returned but parse produced nothing usable — fall through to heuristic.
+  } catch (err: any) {
+    // Abort: bubble up so the UI can react. Anything else: silent fallback.
+    if (err?.name === 'AbortError') throw err;
+    // Quota / rate-limit / no-key / overloaded / network → heuristic still works.
   }
-  // Cap at 8 so a bad response can't flood the UI
-  return { subtasks: subtasks.slice(0, 8), usage: result.usage, source: result.source };
+
+  const heuristic = heuristicSubtasks(taskDescription);
+  if (heuristic.length === 0) {
+    throw new GeminiError("Add a more descriptive task title or notes so we can break it down.", 'unknown');
+  }
+  return { subtasks: heuristic, usage: null, source: 'heuristic' };
+}
+
+/**
+ * Offline subtask generator. Splits a task description into 3–5 actionable
+ * steps using punctuation, conjunctions, and a small library of templates
+ * triggered by leading verbs ("write", "build", "plan", etc).
+ *
+ * Not as smart as the AI, but always works and never blocks the user.
+ */
+function heuristicSubtasks(input: string): string[] {
+  const text = input.trim();
+  if (text.length === 0) return [];
+
+  // 1) Try splitting on explicit list separators first.
+  const fragments = text
+    .split(/(?:\s*(?:,|;|\bthen\b|\band\b|\bplus\b)\s*)|(?:\r?\n)/i)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 3 && s.length <= 80);
+
+  // Drop the original full string if it accidentally survived as a "fragment".
+  const distinct = Array.from(new Set(
+    fragments.map((s) => s.replace(/^[-*•]\s+/, '').replace(/^\d+[.)]\s+/, '').trim()),
+  )).filter((s) => s.toLowerCase() !== text.toLowerCase());
+
+  if (distinct.length >= 2) {
+    return distinct
+      .slice(0, 6)
+      .map((s) => s.charAt(0).toUpperCase() + s.slice(1));
+  }
+
+  // 2) Otherwise, use templates keyed on the first verb.
+  const lower = text.toLowerCase();
+  const lead = lower.split(/\s+/)[0] ?? '';
+  const subject = text.replace(/^[a-z]+\s+/i, '').trim() || 'this';
+
+  const templates: { match: RegExp; steps: string[] }[] = [
+    { match: /^(write|draft|compose|prepare)\b/i, steps: [
+      `Outline ${subject}`,
+      `Draft the first version`,
+      `Review and revise`,
+      `Finalize and share`,
+    ]},
+    { match: /^(build|create|make|develop|implement)\b/i, steps: [
+      `Plan the approach for ${subject}`,
+      `Set up what you need`,
+      `Build the core part`,
+      `Test and refine`,
+    ]},
+    { match: /^(plan|organize|arrange|schedule)\b/i, steps: [
+      `Define the goal of ${subject}`,
+      `List what's needed`,
+      `Set the date and time`,
+      `Confirm with everyone involved`,
+    ]},
+    { match: /^(research|study|learn|read)\b/i, steps: [
+      `Find sources for ${subject}`,
+      `Read and take notes`,
+      `Summarize key takeaways`,
+      `Apply what you learned`,
+    ]},
+    { match: /^(call|email|message|contact|reach)\b/i, steps: [
+      `Decide what to say`,
+      `Reach out`,
+      `Confirm next steps`,
+    ]},
+    { match: /^(buy|order|purchase|shop)\b/i, steps: [
+      `List what to buy`,
+      `Compare options`,
+      `Make the purchase`,
+    ]},
+    { match: /^(clean|tidy|organize|declutter)\b/i, steps: [
+      `Clear the surface`,
+      `Sort items into keep/toss`,
+      `Wipe down and finish`,
+    ]},
+    { match: /^(fix|repair|debug|resolve)\b/i, steps: [
+      `Reproduce the issue`,
+      `Identify the cause`,
+      `Apply the fix`,
+      `Verify it's resolved`,
+    ]},
+  ];
+
+  const tpl = templates.find((t) => t.match.test(text));
+  if (tpl) return tpl.steps.slice(0, 5);
+
+  // 3) Generic last-resort breakdown.
+  return [
+    `Plan ${text}`,
+    `Start working on it`,
+    `Review progress`,
+    `Wrap it up`,
+  ];
 }

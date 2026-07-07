@@ -467,6 +467,11 @@ export function NoteListScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderNote}
         contentContainerStyle={styles.list}
+        removeClippedSubviews
+        initialNumToRender={10}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
         ListEmptyComponent={
           <View style={styles.empty}>
             <View style={styles.emptyIconWrap}>

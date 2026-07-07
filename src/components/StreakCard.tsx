@@ -1,23 +1,31 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../context/ThemeContext';
 import type { StreakData } from '../services/streakService';
-import { getWeekActivity, hasFreezeAvailable, getNextMilestone } from '../services/streakService';
+import {
+  getWeekActivity,
+  freezesAvailable,
+  getNextMilestone,
+  canRepair,
+  repairHoursRemaining,
+} from '../services/streakService';
 
 interface Props {
   streak: StreakData;
+  onRepair?: () => void;
 }
 
-export function StreakCard({ streak }: Props) {
+export function StreakCard({ streak, onRepair }: Props) {
   const { theme } = useTheme();
 
   const weekDays = useMemo(() => getWeekActivity(streak), [streak]);
-  const freezeAvailable = useMemo(() => hasFreezeAvailable(streak), [streak]);
+  const freezesLeft = useMemo(() => freezesAvailable(streak), [streak]);
   const nextMilestone = useMemo(() => getNextMilestone(streak.currentStreak), [streak.currentStreak]);
+  const repairable = useMemo(() => canRepair(streak), [streak]);
+  const hoursLeft = useMemo(() => repairHoursRemaining(streak), [streak]);
   const progressToMilestone = useMemo(() => {
     if (!nextMilestone) return 1;
-    // Find previous milestone
     const prevMilestone = [0, 3, 7, 14, 21, 30, 50, 75, 100, 150, 200, 365]
       .filter(m => m < nextMilestone)
       .pop() ?? 0;
@@ -67,7 +75,7 @@ export function StreakCard({ streak }: Props) {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 4,
-      backgroundColor: freezeAvailable ? '#3B82F620' : theme.colors.inputBg,
+      backgroundColor: freezesLeft > 0 ? '#3B82F620' : theme.colors.inputBg,
       paddingHorizontal: 10,
       paddingVertical: 5,
       borderRadius: 12,
@@ -75,7 +83,41 @@ export function StreakCard({ streak }: Props) {
     freezeText: {
       fontSize: 11,
       fontWeight: '700',
-      color: freezeAvailable ? '#3B82F6' : theme.colors.textMuted,
+      color: freezesLeft > 0 ? '#3B82F6' : theme.colors.textMuted,
+    },
+    repairBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      padding: 12,
+      backgroundColor: '#F59E0B18',
+      borderRadius: 14,
+      marginBottom: 14,
+      borderWidth: 1,
+      borderColor: '#F59E0B40',
+    },
+    repairTextWrap: { flex: 1 },
+    repairTitle: {
+      fontSize: 13,
+      fontWeight: '800',
+      color: theme.colors.text,
+    },
+    repairSub: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: theme.colors.textMuted,
+      marginTop: 2,
+    },
+    repairBtn: {
+      backgroundColor: '#F59E0B',
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 10,
+    },
+    repairBtnText: {
+      color: '#FFF',
+      fontSize: 12,
+      fontWeight: '800',
     },
     weekRow: {
       flexDirection: 'row',
@@ -158,7 +200,7 @@ export function StreakCard({ streak }: Props) {
       color: theme.colors.textMuted,
       marginTop: 2,
     },
-  }), [theme, streak, freezeAvailable]);
+  }), [theme, streak, freezesLeft]);
 
   const todayKey = (() => {
     const d = new Date();
@@ -179,22 +221,38 @@ export function StreakCard({ streak }: Props) {
           </View>
           <View>
             <Text style={styles.streakNum}>{streak.currentStreak}</Text>
-            <Text style={styles.streakLabel}>
-              {streak.currentStreak === 1 ? 'Day Streak' : 'Day Streak'}
-            </Text>
+            <Text style={styles.streakLabel}>Day Streak</Text>
           </View>
         </View>
         <View style={styles.freezeBadge}>
           <Ionicons
             name="snow"
             size={14}
-            color={freezeAvailable ? '#3B82F6' : theme.colors.textMuted}
+            color={freezesLeft > 0 ? '#3B82F6' : theme.colors.textMuted}
           />
           <Text style={styles.freezeText}>
-            {freezeAvailable ? '1 Freeze' : 'Used'}
+            {freezesLeft} Freeze{freezesLeft !== 1 ? 's' : ''}
           </Text>
         </View>
       </View>
+
+      {/* Repair banner — only when a recently-broken streak is recoverable */}
+      {repairable && onRepair && (
+        <View style={styles.repairBanner}>
+          <Ionicons name="bandage" size={22} color="#F59E0B" />
+          <View style={styles.repairTextWrap}>
+            <Text style={styles.repairTitle}>
+              Repair your {streak.brokenStreakLength}-day streak
+            </Text>
+            <Text style={styles.repairSub}>
+              {hoursLeft}h left · 1 repair / month
+            </Text>
+          </View>
+          <TouchableOpacity style={styles.repairBtn} onPress={onRepair} activeOpacity={0.8}>
+            <Text style={styles.repairBtnText}>REPAIR</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Week dots */}
       <View style={styles.weekRow}>

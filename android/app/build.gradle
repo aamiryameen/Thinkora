@@ -82,8 +82,9 @@ android {
         applicationId "com.thinkora"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 21
-        versionName "1.4.7"
+        versionCode 23
+        versionName "1.4.9"
+        versionName "1.4.9"
     }
     signingConfigs {
         debug {

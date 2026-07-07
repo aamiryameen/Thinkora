@@ -47,6 +47,8 @@ const defaultSettings: AppSettings = {
   themeColorId: 'default',
   pomodoroSettings: { ...DEFAULT_POMODORO },
   geminiApiKey: null,
+  holidayCountry: '',
+  holidayNotificationsEnabled: true,
 };
 
 // ─── Settings helpers (key/value table) ──────────────────────────────────────
@@ -568,7 +570,10 @@ async function setBadges(badges: Badge[]): Promise<void> {
 // ─── App Settings ─────────────────────────────────────────────────────────────
 
 async function getSettings(): Promise<AppSettings> {
-  return getSetting<AppSettings>('app_settings', defaultSettings);
+  const stored = await getSetting<Partial<AppSettings>>('app_settings', defaultSettings);
+  // Merge with defaults so newly-added fields get sensible values for users
+  // upgrading from a prior version without overwriting their existing prefs.
+  return { ...defaultSettings, ...stored } as AppSettings;
 }
 
 async function setSettings(s: AppSettings): Promise<void> {

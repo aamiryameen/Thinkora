@@ -7,6 +7,10 @@ import { MyDayScreen } from '../screens/MyDayScreen';
 import { TaskListScreen } from '../screens/TaskListScreen';
 import { TaskEditorScreen } from '../screens/TaskEditorScreen';
 import { CalendarScreen } from '../screens/CalendarScreen';
+import { DailyPulseScreen } from '../screens/DailyPulseScreen';
+import { TodayCardScreen } from '../screens/TodayCardScreen';
+import { MorningBrewScreen } from '../screens/MorningBrewScreen';
+import { VoiceCaptureScreen } from '../screens/VoiceCaptureScreen';
 import { QuotesScreen } from '../screens/QuotesScreen';
 import { NoteListScreen } from '../screens/NoteListScreen';
 import { NoteEditorScreen } from '../screens/NoteEditorScreen';
@@ -120,6 +124,11 @@ export function AppNavigator() {
         <Stack.Screen name="StreakRewards" component={StreakRewardsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="BirthdayRecap" component={BirthdayRecapScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Quotes" component={QuotesScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="Calendar" component={CalendarScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="DailyPulse" component={DailyPulseScreen} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="TodayCard" component={TodayCardScreen} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="MorningBrew" component={MorningBrewScreen} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="VoiceCapture" component={VoiceCaptureScreen} options={{ presentation: 'modal' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

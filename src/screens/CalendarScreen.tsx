@@ -1,6 +1,7 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ScrollView,
+  Modal, ActivityIndicator, TextInput,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -13,9 +14,18 @@ import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
 import type { Task } from '../types';
+import {
+  getHolidaysForRange,
+  countryName,
+  SUPPORTED_COUNTRIES,
+  type Holiday,
+} from '../services/holidayService';
+import { syncHolidayNotifications } from '../services/holidayNotificationService';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type ViewMode = 'month' | 'week' | 'agenda';
+
+const HOLIDAY_COLOR = '#EF4444';
 
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -54,14 +64,59 @@ export function CalendarScreen() {
   const navigation = useNavigation<Nav>();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { tasks, tasksForDate, toggleTaskComplete, getTaskCategory, settings } = useApp();
+  const { tasks, tasksForDate, toggleTaskComplete, getTaskCategory, settings, updateSettings } = useApp();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
 
   const firstDay = settings.firstDayOfWeek ?? 0;
+  const country = settings.holidayCountry || 'PK';
 
-  // ── Task dots for monthly calendar ──────────────────────────────────────
-  const taskDots = useMemo(() => {
+  // ── Holidays ────────────────────────────────────────────────────────────
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [holidaysLoading, setHolidaysLoading] = useState(false);
+  const [holidaysError, setHolidaysError] = useState<string | null>(null);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setHolidaysLoading(true);
+    setHolidaysError(null);
+    const thisYear = new Date().getFullYear();
+    getHolidaysForRange(country, thisYear, thisYear + 1)
+      .then((list) => {
+        if (cancelled) return;
+        setHolidays(list);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setHolidaysError(err?.message ?? 'Could not load holidays');
+        setHolidays([]);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setHolidaysLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [country]);
+
+  // Re-sync notifications whenever the holiday list or toggle changes.
+  useEffect(() => {
+    syncHolidayNotifications(holidays, !!settings.holidayNotificationsEnabled).catch(() => {});
+  }, [holidays, settings.holidayNotificationsEnabled]);
+
+  const holidaysByDate = useMemo(() => {
+    const m = new Map<string, Holiday[]>();
+    for (const h of holidays) {
+      const list = m.get(h.date) ?? [];
+      list.push(h);
+      m.set(h.date, list);
+    }
+    return m;
+  }, [holidays]);
+
+  // ── Calendar dots: tasks + a single holiday marker ──────────────────────
+  const calendarDots = useMemo(() => {
     const map = new Map<string, string[]>();
     tasks.forEach((t) => {
       if (!t.dueDate) return;
@@ -73,37 +128,57 @@ export function CalendarScreen() {
       existing.push(color);
       map.set(key, existing);
     });
+    // Prepend a holiday dot so it shows first in the row.
+    holidaysByDate.forEach((_list, key) => {
+      const existing = map.get(key) ?? [];
+      map.set(key, [HOLIDAY_COLOR, ...existing]);
+    });
     return map;
-  }, [tasks, getTaskCategory, theme.colors.primary]);
+  }, [tasks, getTaskCategory, theme.colors.primary, holidaysByDate]);
 
-  // ── Selected day tasks ───────────────────────────────────────────────────
   const selectedTasks = useMemo(
     () => tasksForDate(selectedDate.getTime()),
     [tasksForDate, selectedDate]
   );
 
-  // ── Week days (7 days from week start) ──────────────────────────────────
+  const selectedHolidays = useMemo(
+    () => holidaysByDate.get(dateKey(selectedDate)) ?? [],
+    [holidaysByDate, selectedDate]
+  );
+
   const weekDays = useMemo(() => {
     const start = startOfWeek(selectedDate, firstDay);
     return Array.from({ length: 7 }, (_, i) => addDays(start, i));
   }, [selectedDate, firstDay]);
 
-  // ── Agenda: next 30 days with tasks ─────────────────────────────────────
-  const agendaItems = useMemo(() => {
+  // ── Agenda: combine tasks + holidays for next ~60 days ──────────────────
+  type AgendaItem = { date: Date; tasks: Task[]; holidays: Holiday[] };
+  const agendaItems = useMemo<AgendaItem[]>(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const items: { date: Date; tasks: Task[] }[] = [];
+    const items: AgendaItem[] = [];
     for (let i = -7; i <= 60; i++) {
       const d = addDays(today, i);
       const dayTasks = tasksForDate(d.getTime());
-      if (dayTasks.length > 0) {
-        items.push({ date: d, tasks: dayTasks });
+      const dayHolidays = holidaysByDate.get(dateKey(d)) ?? [];
+      if (dayTasks.length > 0 || dayHolidays.length > 0) {
+        items.push({ date: d, tasks: dayTasks, holidays: dayHolidays });
       }
     }
     return items;
-  }, [tasksForDate]);
+  }, [tasksForDate, holidaysByDate]);
 
-  // ── Navigate week ────────────────────────────────────────────────────────
+  // ── Upcoming holidays (next 6) for a dedicated month-view section ───────
+  const upcomingHolidays = useMemo(() => {
+    const now = Date.now();
+    return holidays
+      .filter((h) => {
+        const [y, m, d] = h.date.split('-').map((s) => parseInt(s, 10));
+        return new Date(y, m - 1, d).getTime() >= now - 24 * 60 * 60 * 1000;
+      })
+      .slice(0, 6);
+  }, [holidays]);
+
   const prevWeek = useCallback(() => setSelectedDate((d) => addDays(d, -7)), []);
   const nextWeek = useCallback(() => setSelectedDate((d) => addDays(d, 7)), []);
 
@@ -119,10 +194,17 @@ export function CalendarScreen() {
     );
   }, [getTaskCategory, toggleTaskComplete, navigation]);
 
+  const filteredCountries = useMemo(() => {
+    const q = countrySearch.trim().toLowerCase();
+    if (!q) return SUPPORTED_COUNTRIES;
+    return SUPPORTED_COUNTRIES.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q),
+    );
+  }, [countrySearch]);
+
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
 
-    // Header
     header: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: insets.top + theme.spacing.md,
@@ -131,8 +213,34 @@ export function CalendarScreen() {
     },
     headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     title: { ...theme.typography.title, color: theme.colors.text, fontSize: 26, fontWeight: '700' },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
 
-    // View mode tabs
+    countryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 6,
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: theme.colors.inputBg,
+    },
+    countryBtnText: { ...theme.typography.caption, color: theme.colors.text, fontWeight: '700' },
+
+    todayPill: {
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 6,
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: theme.colors.primaryLight,
+    },
+    todayPillText: { ...theme.typography.caption, color: theme.colors.primary, fontWeight: '700' },
+
+    notifToggle: {
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: theme.colors.inputBg,
+    },
+
     tabRow: {
       flexDirection: 'row',
       gap: theme.spacing.xs,
@@ -153,7 +261,6 @@ export function CalendarScreen() {
     tabText: { ...theme.typography.caption, color: theme.colors.textSecondary, fontWeight: '600' },
     tabTextActive: { color: '#FFF' },
 
-    // Monthly
     calendarWrap: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },
     dayHeader: {
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -165,7 +272,43 @@ export function CalendarScreen() {
     emptyDay: { alignItems: 'center', paddingTop: theme.spacing.xl, gap: theme.spacing.sm },
     emptyText: { ...theme.typography.bodySmall, color: theme.colors.textMuted },
 
-    // Weekly
+    holidayBanner: {
+      marginHorizontal: theme.spacing.lg,
+      marginBottom: theme.spacing.sm,
+      padding: theme.spacing.md,
+      backgroundColor: HOLIDAY_COLOR + '15',
+      borderRadius: theme.borderRadius.lg,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+    },
+    holidayBannerText: { flex: 1, ...theme.typography.bodySmall, color: theme.colors.text, fontWeight: '600' },
+    holidaySectionTitle: {
+      ...theme.typography.overline,
+      color: theme.colors.textMuted,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
+      marginHorizontal: theme.spacing.lg,
+      marginTop: theme.spacing.md,
+      marginBottom: theme.spacing.sm,
+    },
+    holidayRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.lg,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.colors.border,
+    },
+    holidayDot: {
+      width: 36, height: 36, borderRadius: 18,
+      backgroundColor: HOLIDAY_COLOR + '22',
+      alignItems: 'center', justifyContent: 'center',
+    },
+    holidayName: { ...theme.typography.body, color: theme.colors.text, fontWeight: '600' },
+    holidaySub: { ...theme.typography.caption, color: theme.colors.textMuted },
+
     weekNav: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm,
@@ -202,7 +345,6 @@ export function CalendarScreen() {
     weekDot: { width: 4, height: 4, borderRadius: 2 },
     weekContent: { flex: 1, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.md },
 
-    // Agenda
     agendaContainer: { flex: 1, paddingBottom: 100 },
     agendaDateGroup: { marginBottom: theme.spacing.lg, paddingHorizontal: theme.spacing.lg },
     agendaDateHeader: {
@@ -212,15 +354,23 @@ export function CalendarScreen() {
     agendaDateDot: { width: 10, height: 10, borderRadius: 5 },
     agendaDateLabel: { ...theme.typography.label, color: theme.colors.text, fontWeight: '700' },
     agendaDateSub: { ...theme.typography.caption, color: theme.colors.textMuted },
-    agendaLine: {
-      position: 'absolute', left: 20, top: 0, bottom: 0,
-      width: 1, backgroundColor: theme.colors.border,
+    agendaHolidayChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: HOLIDAY_COLOR + '18',
+      borderRadius: theme.borderRadius.lg,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      marginLeft: 18,
+      marginBottom: 6,
+      alignSelf: 'flex-start',
     },
+    agendaHolidayText: { ...theme.typography.bodySmall, color: theme.colors.text, fontWeight: '600' },
     agendaEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: theme.spacing.md },
     agendaEmptyText: { ...theme.typography.body, color: theme.colors.textMuted },
     agendaEmptyHint: { ...theme.typography.caption, color: theme.colors.textDisabled },
 
-    // FAB
     fab: {
       position: 'absolute',
       bottom: insets.bottom + theme.spacing.xl,
@@ -230,12 +380,42 @@ export function CalendarScreen() {
       alignItems: 'center', justifyContent: 'center',
       ...theme.shadows.fab,
     },
+
+    // Country picker modal
+    modalRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
+    modalSheet: {
+      flex: 1,
+      marginTop: insets.top + 60,
+      backgroundColor: theme.colors.background,
+      borderTopLeftRadius: theme.borderRadius.xl,
+      borderTopRightRadius: theme.borderRadius.xl,
+      overflow: 'hidden',
+    },
+    modalHeader: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      padding: theme.spacing.lg,
+      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border,
+    },
+    modalTitle: { ...theme.typography.titleSmall, color: theme.colors.text, fontWeight: '700' },
+    searchInput: {
+      backgroundColor: theme.colors.inputBg,
+      borderRadius: theme.borderRadius.lg,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: 10,
+      margin: theme.spacing.lg,
+      color: theme.colors.text,
+    },
+    countryRow: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md,
+      borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.border,
+    },
+    countryLabel: { ...theme.typography.body, color: theme.colors.text, flex: 1 },
+    countryCode: { ...theme.typography.caption, color: theme.colors.textMuted, marginRight: theme.spacing.sm },
   }), [theme, insets]);
 
-  // ── Today shortcut ───────────────────────────────────────────────────────
   const isToday = isSameDay(selectedDate, new Date());
 
-  // ── Weekly view month/week label ─────────────────────────────────────────
   const weekLabel = useMemo(() => {
     const start = weekDays[0];
     const end = weekDays[6];
@@ -245,25 +425,66 @@ export function CalendarScreen() {
     return `${start.toLocaleDateString(undefined, { month: 'short' })} – ${end.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
   }, [weekDays]);
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  const renderHolidayHeader = () => (
+    <>
+      {selectedHolidays.length > 0 && (
+        <View style={styles.holidayBanner}>
+          <Ionicons name="sparkles" size={18} color={HOLIDAY_COLOR} />
+          <Text style={styles.holidayBannerText}>
+            {selectedHolidays.map((h) => h.localName || h.name).join(' • ')}
+          </Text>
+        </View>
+      )}
+      {holidaysError && (
+        <View style={[styles.holidayBanner, { backgroundColor: theme.colors.warning + '15' }]}>
+          <Ionicons name="cloud-offline-outline" size={18} color={theme.colors.warning} />
+          <Text style={styles.holidayBannerText}>Couldn't load holidays. Tap retry.</Text>
+          <TouchableOpacity onPress={() => updateSettings({ holidayCountry: country })}>
+            <Text style={[styles.todayPillText, { color: theme.colors.warning }]}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </>
+  );
+
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <Text style={styles.title}>Calendar</Text>
-          {!isToday && (
+          <View style={styles.headerActions}>
             <TouchableOpacity
-              onPress={() => setSelectedDate(new Date())}
-              style={{ paddingHorizontal: theme.spacing.md, paddingVertical: 6, borderRadius: theme.borderRadius.full, backgroundColor: theme.colors.primaryLight }}
+              style={styles.notifToggle}
+              onPress={() => updateSettings({
+                holidayNotificationsEnabled: !settings.holidayNotificationsEnabled,
+              })}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={{ ...theme.typography.caption, color: theme.colors.primary, fontWeight: '700' }}>Today</Text>
+              <Ionicons
+                name={settings.holidayNotificationsEnabled ? 'notifications' : 'notifications-off-outline'}
+                size={18}
+                color={settings.holidayNotificationsEnabled ? theme.colors.primary : theme.colors.textMuted}
+              />
             </TouchableOpacity>
-          )}
+            <TouchableOpacity
+              style={styles.countryBtn}
+              onPress={() => setShowCountryPicker(true)}
+            >
+              <Ionicons name="flag-outline" size={14} color={theme.colors.text} />
+              <Text style={styles.countryBtnText}>{country}</Text>
+            </TouchableOpacity>
+            {!isToday && (
+              <TouchableOpacity
+                onPress={() => setSelectedDate(new Date())}
+                style={styles.todayPill}
+              >
+                <Text style={styles.todayPillText}>Today</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
 
-      {/* View mode tabs */}
       <View style={styles.tabRow}>
         {(['month', 'week', 'agenda'] as ViewMode[]).map((mode) => (
           <TouchableOpacity
@@ -278,7 +499,6 @@ export function CalendarScreen() {
         ))}
       </View>
 
-      {/* ── MONTHLY VIEW ── */}
       {viewMode === 'month' && (
         <FlatList
           ListHeaderComponent={
@@ -288,14 +508,53 @@ export function CalendarScreen() {
                   selectedDate={selectedDate}
                   onSelectDate={setSelectedDate}
                   onMonthChange={setSelectedDate}
-                  taskDots={taskDots}
+                  taskDots={calendarDots}
                   firstDayOfWeek={firstDay}
                 />
               </View>
+              {renderHolidayHeader()}
               <View style={styles.dayHeader}>
                 <Text style={styles.dayLabel}>{shortDateLabel(selectedDate)}</Text>
-                <Text style={styles.taskCount}>{selectedTasks.length} task{selectedTasks.length !== 1 ? 's' : ''}</Text>
+                <Text style={styles.taskCount}>
+                  {selectedTasks.length} task{selectedTasks.length !== 1 ? 's' : ''}
+                </Text>
               </View>
+              {upcomingHolidays.length > 0 && (
+                <>
+                  <Text style={styles.holidaySectionTitle}>
+                    Upcoming Holidays · {countryName(country)}
+                  </Text>
+                  {upcomingHolidays.map((h) => {
+                    const [y, m, d] = h.date.split('-').map((s) => parseInt(s, 10));
+                    const date = new Date(y, m - 1, d);
+                    return (
+                      <TouchableOpacity
+                        key={`${h.date}-${h.name}`}
+                        style={styles.holidayRow}
+                        onPress={() => setSelectedDate(date)}
+                      >
+                        <View style={styles.holidayDot}>
+                          <Ionicons name="sparkles" size={18} color={HOLIDAY_COLOR} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.holidayName}>{h.localName || h.name}</Text>
+                          <Text style={styles.holidaySub}>
+                            {date.toLocaleDateString(undefined, {
+                              weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+                            })}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={16} color={theme.colors.textDisabled} />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+              {holidaysLoading && upcomingHolidays.length === 0 && (
+                <View style={{ paddingVertical: theme.spacing.lg, alignItems: 'center' }}>
+                  <ActivityIndicator color={theme.colors.primary} />
+                </View>
+              )}
             </>
           }
           data={selectedTasks}
@@ -304,18 +563,18 @@ export function CalendarScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <View style={styles.emptyDay}>
-              <Icon name="calendar" size={40} color={theme.colors.textDisabled} />
-              <Text style={styles.emptyText}>No tasks for this day</Text>
-            </View>
+            selectedHolidays.length === 0 ? (
+              <View style={styles.emptyDay}>
+                <Icon name="calendar" size={40} color={theme.colors.textDisabled} />
+                <Text style={styles.emptyText}>No tasks for this day</Text>
+              </View>
+            ) : null
           }
         />
       )}
 
-      {/* ── WEEKLY VIEW ── */}
       {viewMode === 'week' && (
         <>
-          {/* Week navigation */}
           <View style={styles.weekNav}>
             <TouchableOpacity onPress={prevWeek} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
@@ -326,15 +585,17 @@ export function CalendarScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Day columns */}
           <View style={styles.weekDaysRow}>
             {weekDays.map((day) => {
               const isSelected = isSameDay(day, selectedDate);
               const isTodayDay = isSameDay(day, new Date());
               const dayTasks = tasksForDate(day.getTime());
-              const dots = dayTasks.slice(0, 3).map((t) => {
+              const dayHolidays = holidaysByDate.get(dateKey(day)) ?? [];
+              const dots: string[] = [];
+              if (dayHolidays.length > 0) dots.push(HOLIDAY_COLOR);
+              dayTasks.slice(0, 2).forEach((t) => {
                 const cat = t.categoryId ? getTaskCategory(t.categoryId) : undefined;
-                return cat?.color ?? theme.colors.primary;
+                dots.push(cat?.color ?? theme.colors.primary);
               });
               return (
                 <TouchableOpacity
@@ -354,7 +615,7 @@ export function CalendarScreen() {
                     {day.getDate()}
                   </Text>
                   <View style={styles.weekDotRow}>
-                    {dots.map((c, i) => (
+                    {dots.slice(0, 3).map((c, i) => (
                       <View key={i} style={[styles.weekDot, { backgroundColor: c }]} />
                     ))}
                   </View>
@@ -363,7 +624,6 @@ export function CalendarScreen() {
             })}
           </View>
 
-          {/* Selected day tasks */}
           <FlatList
             style={styles.weekContent}
             data={selectedTasks}
@@ -372,44 +632,65 @@ export function CalendarScreen() {
             contentContainerStyle={{ paddingBottom: 100 }}
             showsVerticalScrollIndicator={false}
             ListHeaderComponent={
-              <View style={[styles.dayHeader, { paddingHorizontal: 0 }]}>
-                <Text style={styles.dayLabel}>{shortDateLabel(selectedDate)}</Text>
-                <Text style={styles.taskCount}>{selectedTasks.length} task{selectedTasks.length !== 1 ? 's' : ''}</Text>
-              </View>
+              <>
+                <View style={[styles.dayHeader, { paddingHorizontal: 0 }]}>
+                  <Text style={styles.dayLabel}>{shortDateLabel(selectedDate)}</Text>
+                  <Text style={styles.taskCount}>
+                    {selectedTasks.length} task{selectedTasks.length !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+                {selectedHolidays.length > 0 && (
+                  <View style={[styles.holidayBanner, { marginHorizontal: 0 }]}>
+                    <Ionicons name="sparkles" size={18} color={HOLIDAY_COLOR} />
+                    <Text style={styles.holidayBannerText}>
+                      {selectedHolidays.map((h) => h.localName || h.name).join(' • ')}
+                    </Text>
+                  </View>
+                )}
+              </>
             }
             ListEmptyComponent={
-              <View style={styles.emptyDay}>
-                <Icon name="calendar" size={36} color={theme.colors.textDisabled} />
-                <Text style={styles.emptyText}>No tasks this day</Text>
-              </View>
+              selectedHolidays.length === 0 ? (
+                <View style={styles.emptyDay}>
+                  <Icon name="calendar" size={36} color={theme.colors.textDisabled} />
+                  <Text style={styles.emptyText}>No tasks this day</Text>
+                </View>
+              ) : null
             }
           />
         </>
       )}
 
-      {/* ── AGENDA VIEW ── */}
       {viewMode === 'agenda' && (
         agendaItems.length === 0 ? (
           <View style={styles.agendaEmpty}>
             <Ionicons name="list-outline" size={64} color={theme.colors.textDisabled} />
-            <Text style={styles.agendaEmptyText}>No upcoming tasks</Text>
-            <Text style={styles.agendaEmptyHint}>Add tasks with due dates to see them here</Text>
+            <Text style={styles.agendaEmptyText}>No upcoming tasks or holidays</Text>
+            <Text style={styles.agendaEmptyHint}>
+              Add tasks with due dates or change country to see public holidays
+            </Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={[styles.agendaContainer, { paddingTop: theme.spacing.md }]} showsVerticalScrollIndicator={false}>
-            {agendaItems.map(({ date, tasks: dayTasks }) => {
+          <ScrollView
+            contentContainerStyle={[styles.agendaContainer, { paddingTop: theme.spacing.md }]}
+            showsVerticalScrollIndicator={false}
+          >
+            {agendaItems.map(({ date, tasks: dayTasks, holidays: dayHolidays }) => {
               const isSelectedDay = isSameDay(date, selectedDate);
               const isTodayDay = isSameDay(date, new Date());
               return (
                 <View key={dateKey(date)} style={styles.agendaDateGroup}>
-                  {/* Date header */}
                   <TouchableOpacity
                     style={styles.agendaDateHeader}
                     onPress={() => { setSelectedDate(date); setViewMode('month'); }}
                     activeOpacity={0.7}
                   >
                     <View style={[styles.agendaDateDot, {
-                      backgroundColor: isTodayDay ? theme.colors.primary : isSelectedDay ? theme.colors.accent ?? '#F59E0B' : theme.colors.border,
+                      backgroundColor: isTodayDay
+                        ? theme.colors.primary
+                        : isSelectedDay
+                          ? theme.colors.accent ?? '#F59E0B'
+                          : theme.colors.border,
                       width: isTodayDay ? 12 : 10,
                       height: isTodayDay ? 12 : 10,
                       borderRadius: isTodayDay ? 6 : 5,
@@ -421,10 +702,18 @@ export function CalendarScreen() {
                       {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                     </Text>
                     <View style={{ flex: 1 }} />
-                    <Text style={styles.taskCount}>{dayTasks.length} task{dayTasks.length !== 1 ? 's' : ''}</Text>
+                    <Text style={styles.taskCount}>
+                      {dayTasks.length} task{dayTasks.length !== 1 ? 's' : ''}
+                    </Text>
                   </TouchableOpacity>
 
-                  {/* Tasks for this day */}
+                  {dayHolidays.map((h) => (
+                    <View key={`${h.date}-${h.name}`} style={styles.agendaHolidayChip}>
+                      <Ionicons name="sparkles" size={14} color={HOLIDAY_COLOR} />
+                      <Text style={styles.agendaHolidayText}>{h.localName || h.name}</Text>
+                    </View>
+                  ))}
+
                   {dayTasks.map((task) => {
                     const cat = task.categoryId ? getTaskCategory(task.categoryId) : undefined;
                     return (
@@ -445,7 +734,6 @@ export function CalendarScreen() {
         )
       )}
 
-      {/* FAB */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('TaskEditor', { date: selectedDate.getTime() })}
@@ -453,6 +741,58 @@ export function CalendarScreen() {
       >
         <Icon name="add" size={28} color="#FFF" />
       </TouchableOpacity>
+
+      {/* Country picker modal */}
+      <Modal
+        visible={showCountryPicker}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowCountryPicker(false)}
+      >
+        <View style={styles.modalRoot}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Choose Country</Text>
+              <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
+                <Ionicons name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              value={countrySearch}
+              onChangeText={setCountrySearch}
+              placeholder="Search country..."
+              placeholderTextColor={theme.colors.textMuted}
+              style={styles.searchInput}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            <FlatList
+              data={filteredCountries}
+              keyExtractor={(c) => c.code}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const isSelected = item.code === country;
+                return (
+                  <TouchableOpacity
+                    style={styles.countryRow}
+                    onPress={() => {
+                      updateSettings({ holidayCountry: item.code });
+                      setShowCountryPicker(false);
+                      setCountrySearch('');
+                    }}
+                  >
+                    <Text style={styles.countryLabel}>{item.name}</Text>
+                    <Text style={styles.countryCode}>{item.code}</Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark" size={18} color={theme.colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

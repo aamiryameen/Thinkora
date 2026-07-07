@@ -16,12 +16,14 @@ export function AdBanner({ size = BannerAdSize.ADAPTIVE_BANNER, style }: Props) 
   const retryCount = useRef(0);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Retry loading ad on failure (up to 5 times with increasing delay)
   const handleFailedToLoad = useCallback((error: any) => {
     if (__DEV__) console.warn('[Ads] Banner failed:', error);
     setLoaded(false);
-    if (retryCount.current < 5) {
-      const delay = Math.min(30000, (retryCount.current + 1) * 10000); // 10s, 20s, 30s...
+    // In debug builds, retry forever with a fixed 10s delay so you always see
+    // ads while iterating. Production: cap at 5 retries with backoff.
+    const maxRetries = __DEV__ ? Infinity : 5;
+    if (retryCount.current < maxRetries) {
+      const delay = __DEV__ ? 10000 : Math.min(30000, (retryCount.current + 1) * 10000);
       retryTimer.current = setTimeout(() => {
         retryCount.current += 1;
         setRetryKey(k => k + 1); // remount BannerAd to retry
@@ -31,19 +33,31 @@ export function AdBanner({ size = BannerAdSize.ADAPTIVE_BANNER, style }: Props) 
 
   const handleLoaded = useCallback(() => {
     setLoaded(true);
-    retryCount.current = 0; // reset on success
+    retryCount.current = 0;
     if (__DEV__) console.log('[Ads] Banner loaded');
   }, []);
 
-  // Cleanup timer on unmount
   useEffect(() => {
     return () => {
       if (retryTimer.current) clearTimeout(retryTimer.current);
     };
   }, []);
 
+  // In debug, reserve a fixed height so the banner is always visible while
+  // the ad fetches — makes it obvious whether ads are wired correctly. In
+  // release, keep the original "hide until loaded" behaviour so users never
+  // see an empty bar if a request fails.
+  const reserveSpace = __DEV__ || loaded;
+
   return (
-    <View style={[styles.container, { bottom: insets.bottom }, !loaded && styles.hidden, style]}>
+    <View
+      style={[
+        styles.container,
+        { bottom: insets.bottom },
+        !reserveSpace && styles.hidden,
+        style,
+      ]}
+    >
       <BannerAd
         key={`ad-${retryKey}`}
         unitId={AD_UNITS.banner}
@@ -63,10 +77,12 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
     width: '100%',
+    minHeight: 50,
     backgroundColor: 'transparent',
   },
   hidden: {
     height: 0,
+    minHeight: 0,
     overflow: 'hidden',
   },
 });

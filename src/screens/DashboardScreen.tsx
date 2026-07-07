@@ -19,6 +19,11 @@ interface QuickLink {
 }
 
 const FEATURE_LINKS: QuickLink[] = [
+  { label: 'Morning Brew', icon: 'cafe-outline', color: '#D97706', route: 'MorningBrew' },
+  { label: 'Daily Pulse', icon: 'pulse-outline', color: '#F97316', route: 'DailyPulse' },
+  { label: 'Today Card', icon: 'share-social-outline', color: '#FBBF24', route: 'TodayCard' },
+  { label: 'Voice Capture', icon: 'mic-circle-outline', color: '#7C3AED', route: 'VoiceCapture' },
+  { label: 'Calendar', icon: 'calendar-outline', color: '#EF4444', route: 'Calendar' },
   { label: 'Habits', icon: 'flame-outline', color: '#F59E0B', route: 'HabitTracker' },
   { label: 'Pomodoro', icon: 'timer-outline', color: '#14B8A6', route: 'Pomodoro' },
   { label: 'Journal', icon: 'happy-outline', color: '#EC4899', route: 'MoodJournal' },

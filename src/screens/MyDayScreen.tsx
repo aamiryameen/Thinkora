@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { TaskCard } from '../components/TaskCard';
 import { StreakCard } from '../components/StreakCard';
+import { MilestoneCelebrationModal } from '../components/MilestoneCelebrationModal';
+import { loadPulseState, isPulseDoneToday, type DailyPulseState } from '../services/dailyPulseService';
 import { MorningBriefingCard } from '../components/MorningBriefingCard';
 import { WeatherCard } from '../components/WeatherCard';
 import { useApp } from '../context/AppContext';
@@ -43,7 +45,7 @@ const QUICK_ACTIONS = [
 ] as const;
 
 const FEATURE_SHORTCUTS = [
-  { label: 'Voice', icon: 'mic-outline', color: '#8B5CF6', route: 'VoiceCommand' },
+  { label: 'Voice', icon: 'mic-outline', color: '#8B5CF6', route: 'VoiceCapture' },
   { label: 'Matrix', icon: 'grid-outline', color: '#8B5CF6', route: 'Eisenhower' },
   { label: 'Lists', icon: 'people-outline', color: '#3B82F6', route: 'SharedLists' },
   { label: 'Focus', icon: 'timer-outline', color: '#14B8A6', route: 'Pomodoro' },
@@ -61,7 +63,51 @@ export function MyDayScreen() {
   const navigation = useNavigation<Nav>();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { tasks, toggleTaskComplete, getTaskCategory, taskStats, streak } = useApp();
+  const { tasks, toggleTaskComplete, getTaskCategory, taskStats, streak, repairCurrentStreak } = useApp();
+  const [celebrateMilestone, setCelebrateMilestone] = useState<number | null>(null);
+  const seenMilestonesRef = React.useRef<Set<number> | null>(null);
+
+  // Detect newly-reached milestones so we can pop the celebration modal.
+  // Initialize the seen set with whatever was already celebrated so opening
+  // the app doesn't replay old milestones.
+  useEffect(() => {
+    if (seenMilestonesRef.current === null) {
+      seenMilestonesRef.current = new Set(streak.milestones);
+      return;
+    }
+    const seen = seenMilestonesRef.current;
+    for (const m of streak.milestones) {
+      if (!seen.has(m)) {
+        seen.add(m);
+        setCelebrateMilestone(m);
+        break;
+      }
+    }
+  }, [streak.milestones]);
+
+  // Daily Pulse banner — refresh when screen comes into focus.
+  const [pulseState, setPulseState] = useState<DailyPulseState | null>(null);
+  useEffect(() => {
+    loadPulseState().then(setPulseState);
+    const unsubscribe = navigation.addListener?.('focus', () => {
+      loadPulseState().then(setPulseState);
+    });
+    return () => { unsubscribe?.(); };
+  }, [navigation]);
+  const showPulseBanner = useMemo(() => {
+    if (!pulseState) return false;
+    if (isPulseDoneToday(pulseState)) return false;
+    return new Date().getHours() >= (pulseState.notifyHour ?? 20);
+  }, [pulseState]);
+
+  const handleRepair = useCallback(async () => {
+    const ok = await repairCurrentStreak();
+    if (ok) {
+      Alert.alert('Streak repaired!', 'Your streak has been restored. Keep showing up.');
+    } else {
+      Alert.alert('Repair unavailable', 'Repair is only available within 24 hours of breaking a streak, once per month.');
+    }
+  }, [repairCurrentStreak]);
   const { habits, toggleHabitDate, getHabitStreak, journalEntries, badges } = useFeatures();
 
   const now = new Date();
@@ -405,8 +451,68 @@ export function MyDayScreen() {
           ))}
         </View>
 
+        {/* ── Daily Pulse banner (evenings only, until completed) ── */}
+        {showPulseBanner && (
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              padding: 16,
+              borderRadius: 18,
+              backgroundColor: '#F9731618',
+              borderWidth: 1.5,
+              borderColor: '#F9731640',
+              marginBottom: 16,
+            }}
+            onPress={() => navigation.navigate('DailyPulse')}
+            activeOpacity={0.85}
+          >
+            <View style={{
+              width: 44, height: 44, borderRadius: 22,
+              backgroundColor: '#F9731620',
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Ionicons name="pulse" size={22} color="#F97316" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: theme.colors.text }}>
+                🌅 Your Daily Pulse is ready
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.colors.textMuted, marginTop: 2 }}>
+                60 seconds · {pulseState?.pulseStreak ? `${pulseState.pulseStreak}-day Pulse streak` : 'Start your Pulse streak'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#F97316" />
+          </TouchableOpacity>
+        )}
+
         {/* ── Daily Streak ── */}
-        <StreakCard streak={streak} />
+        <StreakCard streak={streak} onRepair={handleRepair} />
+
+        {/* ── Today Card share shortcut ── */}
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            padding: 14, borderRadius: 16, marginBottom: 16,
+            backgroundColor: theme.colors.cardBg,
+            borderWidth: 1, borderColor: theme.colors.border,
+          }}
+          onPress={() => navigation.navigate('TodayCard')}
+          activeOpacity={0.7}
+        >
+          <View style={{
+            width: 36, height: 36, borderRadius: 10,
+            backgroundColor: '#FBBF2420',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Ionicons name="share-social-outline" size={20} color="#FBBF24" />
+          </View>
+          <Text style={{ flex: 1, fontSize: 14, fontWeight: '700', color: theme.colors.text }}>
+            Share today's card
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
+        </TouchableOpacity>
 
         {/* ── Overdue Alert ── */}
         {overdueTasks.length > 0 && (
@@ -579,6 +685,12 @@ export function MyDayScreen() {
         </View>
       </ScrollView>
       <AdBanner />
+
+      <MilestoneCelebrationModal
+        visible={celebrateMilestone !== null}
+        milestone={celebrateMilestone ?? 0}
+        onClose={() => setCelebrateMilestone(null)}
+      />
     </View>
   );
 }

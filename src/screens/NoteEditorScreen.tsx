@@ -892,33 +892,20 @@ export function NoteEditorScreen() {
           flexDirection: 'row',
           alignItems: 'center',
           gap: theme.spacing.md,
-          paddingVertical: theme.spacing.md,
-          paddingHorizontal: theme.spacing.md,
+          paddingVertical: 14,
+          paddingLeft: 16,
+          paddingRight: theme.spacing.md,
           borderRadius: theme.borderRadius.lg,
           backgroundColor: theme.colors.surface,
-          borderWidth: StyleSheet.hairlineWidth,
+          borderWidth: 1.5,
           borderColor: theme.colors.borderSubtle,
           overflow: 'hidden',
-          ...theme.shadows.subtle,
-        },
-        catCardSelected: {
-          borderWidth: 2,
         },
         catCardBar: {
           position: 'absolute',
           left: 0, top: 0, bottom: 0,
           width: 4,
-          borderTopLeftRadius: theme.borderRadius.lg,
-          borderBottomLeftRadius: theme.borderRadius.lg,
         },
-        catCardEmojiWrap: {
-          width: 44,
-          height: 44,
-          borderRadius: 14,
-          alignItems: 'center',
-          justifyContent: 'center',
-        },
-        catCardEmoji: { fontSize: 22, lineHeight: 24 },
         catCardBody: { flex: 1, gap: 2 },
         catCardLabel: {
           ...theme.typography.body,
@@ -926,15 +913,14 @@ export function NoteEditorScreen() {
           color: theme.colors.text,
           letterSpacing: -0.1,
         },
-        catCardLabelSelected: { },
         catCardDesc: {
           ...theme.typography.caption,
           color: theme.colors.textMuted,
           fontWeight: '500',
         },
         catCardCheck: {
-          width: 26, height: 26,
-          borderRadius: 13,
+          width: 22, height: 22,
+          borderRadius: 11,
           alignItems: 'center', justifyContent: 'center',
         },
         catCardCheckOff: {
@@ -1437,15 +1423,15 @@ export function NoteEditorScreen() {
                     activeOpacity={0.85}
                     style={[
                       styles.catCard,
-                      selected && styles.catCardSelected,
-                      selected && { borderColor: m.color, backgroundColor: m.bg },
+                      selected && {
+                        borderColor: m.color,
+                        backgroundColor: m.bg,
+                        borderWidth: 2,
+                      },
                     ]}
                     onPress={() => setCategory(c)}
                   >
                     <View style={[styles.catCardBar, { backgroundColor: m.color }]} />
-                    <View style={[styles.catCardEmojiWrap, { backgroundColor: m.bg }]}>
-                      <Text style={styles.catCardEmoji}>{m.emoji}</Text>
-                    </View>
                     <View style={styles.catCardBody}>
                       <Text style={[styles.catCardLabel, selected && { color: m.color }]}>
                         {m.label}
@@ -1454,9 +1440,10 @@ export function NoteEditorScreen() {
                     </View>
                     <View style={[
                       styles.catCardCheck,
-                      selected ? { backgroundColor: m.color } : styles.catCardCheckOff,
+                      selected ? { backgroundColor: m.color, borderColor: m.color }
+                               : styles.catCardCheckOff,
                     ]}>
-                      {selected && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                      {selected && <Ionicons name="checkmark" size={14} color="#FFF" />}
                     </View>
                   </TouchableOpacity>
                 );

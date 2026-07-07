@@ -18,7 +18,7 @@ function dateKey(y: number, m: number, d: number): string {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-export function CalendarGrid({ selectedDate, onSelectDate, onMonthChange, taskDots, firstDayOfWeek = 0 }: Props) {
+function CalendarGridImpl({ selectedDate, onSelectDate, onMonthChange, taskDots, firstDayOfWeek = 0 }: Props) {
   const { theme } = useTheme();
   const year = selectedDate.getFullYear();
   const month = selectedDate.getMonth();
@@ -211,3 +211,5 @@ export function CalendarGrid({ selectedDate, onSelectDate, onMonthChange, taskDo
     </View>
   );
 }
+
+export const CalendarGrid = React.memo(CalendarGridImpl);
