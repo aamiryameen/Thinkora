@@ -16,6 +16,10 @@ export class NoteModel extends Model {
   @text('category') category!: string;
   @text('attachments') attachmentsRaw!: string; // stored as JSON
   @field('reminder_id') reminderId!: string | null;
+  @field('background_uri') backgroundUri!: string | null;
+  @field('font_id') fontId!: string | null;
+  @field('archived') archived!: boolean;
+  @field('trashed_at') trashedAt!: number | null;
   @field('created_at') createdAt!: number;
   @field('updated_at') updatedAt!: number;
 
@@ -41,6 +45,10 @@ export class NoteModel extends Model {
       category: (this.category as SmartCategory) || 'none',
       attachments: this.attachments,
       reminderId: this.reminderId ?? null,
+      backgroundUri: this.backgroundUri ?? null,
+      fontId: this.fontId ?? null,
+      archived: !!this.archived,
+      trashedAt: this.trashedAt ?? null,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };

@@ -4,84 +4,43 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  Animated,
-  Easing,
   ActivityIndicator,
-  ScrollView,
+  AppState,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { getCurrentWeather, type WeatherSnapshot, type HourlySlot } from '../services/weatherService';
+import {
+  getCurrentWeather,
+  WEATHER_THEMES,
+  type WeatherSnapshot,
+} from '../services/weatherService';
+import { checkAndNotify } from '../services/weatherAlertService';
+import { WeatherDecor, WeatherGradient } from './WeatherDecor';
+
+/**
+ * How often an open card re-reads the weather. Open-Meteo updates its
+ * `minutely_15` data every 15 minutes, so polling faster only burns battery —
+ * the service's own 2-minute cache absorbs any redundant calls.
+ */
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 interface Props {
   onPrimary?: boolean;
 }
 
-function useBobLoop() {
-  const value = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(value, { toValue: 1, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(value, { toValue: 0, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [value]);
-  return value;
-}
-
-function formatHourLabel(ts: number, isFirst: boolean): string {
-  if (isFirst) return 'Now';
-  const d = new Date(ts);
-  const h = d.getHours();
+/** Compact hour label for the pills, e.g. "4PM". */
+function hourText(ts: number): string {
+  const h = new Date(ts).getHours();
   const suffix = h < 12 ? 'AM' : 'PM';
-  const hour12 = h % 12 === 0 ? 12 : h % 12;
-  return `${hour12} ${suffix}`;
+  return `${h % 12 === 0 ? 12 : h % 12}${suffix}`;
 }
-
-interface HourPillProps {
-  slot: HourlySlot;
-  isFirst: boolean;
-}
-function HourPill({ slot, isFirst }: HourPillProps) {
-  return (
-    <View style={[hourStyles.pill, isFirst && hourStyles.pillNow]}>
-      <Text style={[hourStyles.label, isFirst && hourStyles.labelNow]} numberOfLines={1}>
-        {formatHourLabel(slot.ts, isFirst)}
-      </Text>
-      <Text style={hourStyles.emoji}>{slot.emoji}</Text>
-      <Text style={[hourStyles.temp, isFirst && hourStyles.tempNow]}>{slot.temperature}°</Text>
-    </View>
-  );
-}
-const hourStyles = StyleSheet.create({
-  pill: {
-    alignItems: 'center',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    gap: 1,
-    minWidth: 50,
-  },
-  pillNow: {
-    backgroundColor: '#FFFFFF26',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#FFFFFF40',
-  },
-  label: { fontSize: 9.5, fontWeight: '700', color: '#FFFFFFA8', letterSpacing: 0.2 },
-  labelNow: { color: '#FFF' },
-  emoji: { fontSize: 14, lineHeight: 18 },
-  temp: { fontSize: 11, fontWeight: '700', color: '#FFFFFFD0' },
-  tempNow: { color: '#FFF' },
-});
 
 export function WeatherCard({ onPrimary = true }: Props) {
+  const navigation = useNavigation<any>();
   const [snap, setSnap] = useState<WeatherSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const bob = useBobLoop();
 
   const load = useCallback(async (force: boolean) => {
     abortRef.current?.abort();
@@ -97,6 +56,10 @@ export function WeatherCard({ onPrimary = true }: Props) {
         setSnap(null);
       } else {
         setSnap(result);
+        // Fire condition warnings off the back of a normal refresh. The service
+        // dedupes per kind per day, so calling this on every load is safe and
+        // means alerts work without a background task.
+        checkAndNotify(result).catch(() => {});
       }
     } catch {
       if (!ctrl.signal.aborted) setError('Weather unavailable');
@@ -107,7 +70,32 @@ export function WeatherCard({ onPrimary = true }: Props) {
 
   useEffect(() => {
     load(false);
-    return () => abortRef.current?.abort();
+
+    // Weather must stay live, and a mount-only fetch does not: the card would
+    // keep showing whatever it read when the screen first appeared, which on a
+    // long-lived session means hours-old data.
+    //
+    // Two triggers cover the realistic cases:
+    //  - a timer, for a screen left open
+    //  - app foregrounding, which is when a backgrounded app is most stale
+    //    (timers are unreliable while backgrounded, so this is the safety net)
+    // Both go through the same cached fetch, so repeat calls inside the
+    // service's short TTL are cheap and don't hammer the API.
+    const interval = setInterval(() => load(false), REFRESH_INTERVAL_MS);
+
+    let lastState = AppState.currentState;
+    const sub = AppState.addEventListener('change', (next) => {
+      if ((lastState === 'background' || lastState === 'inactive') && next === 'active') {
+        load(false);
+      }
+      lastState = next;
+    });
+
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+      abortRef.current?.abort();
+    };
   }, [load]);
 
   const surfaceTint = onPrimary ? '#FFFFFF14' : 'rgba(15,23,41,0.04)';
@@ -115,9 +103,16 @@ export function WeatherCard({ onPrimary = true }: Props) {
   const borderTint = onPrimary ? '#FFFFFF33' : 'rgba(15,23,41,0.08)';
   const accent = snap?.accent ?? '#F59E0B';
 
+  // The card takes its whole look from the current conditions. Until the first
+  // fetch resolves there is no theme, so the plain translucent surface is used
+  // — better than flashing a wrong sky and then correcting it.
+  const wx = snap ? WEATHER_THEMES[snap.theme] : null;
+
   const styles = StyleSheet.create({
     card: {
-      borderRadius: 22,
+      // 18 rather than 22: the reference cards are wide and short, and a large
+      // radius on a ~104px-tall card starts eating the corners of the content.
+      borderRadius: 18,
       backgroundColor: surfaceTint,
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: borderTint,
@@ -130,6 +125,27 @@ export function WeatherCard({ onPrimary = true }: Props) {
       backgroundColor: surfaceTop,
       opacity: 0.25,
     },
+    /**
+     * Text protection.
+     *
+     * This layout puts text across the full width (icon + condition left,
+     * temperature right, pills along the bottom), so a column split no longer
+     * works. Instead the scrim is weighted vertically: stronger through the
+     * middle band where the largest type sits, lighter at the top where the
+     * decorations originate so the animation still reads.
+     */
+    scrimTop: {
+      position: 'absolute',
+      left: 0, right: 0, top: 0,
+      height: '34%',
+      backgroundColor: 'rgba(5,11,22,0.14)',
+    },
+    scrimBody: {
+      position: 'absolute',
+      left: 0, right: 0, top: '34%', bottom: 0,
+      // 0.32 keeps white text at 4.9:1 even on the lightest theme's horizon.
+      backgroundColor: 'rgba(5,11,22,0.32)',
+    },
     accentBlob: {
       position: 'absolute',
       top: -40, right: -40,
@@ -140,100 +156,103 @@ export function WeatherCard({ onPrimary = true }: Props) {
     },
     inner: {
       paddingHorizontal: 14,
-      paddingTop: 10,
-      paddingBottom: 10,
-      gap: 8,
+      paddingTop: 12,
+      paddingBottom: 12,
+      gap: 10,
     },
-    /* Single hero row: emoji | temp | meta-stack | location pill on top-right */
-    heroRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-    },
-    emojiWrap: {
-      width: 52, height: 52,
+    topZone: { flexDirection: 'row', alignItems: 'flex-start' },
+    iconCol: { flex: 1 },
+    iconWrap: {
+      width: 62, height: 62,
       alignItems: 'center', justifyContent: 'center',
+      marginLeft: -4,
     },
-    emoji: { fontSize: 38, lineHeight: 42 },
-    midCol: { flex: 1, justifyContent: 'center', paddingTop: 2 },
-    tempRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
-    temp: {
-      fontSize: 40,
-      fontWeight: '300',
-      color: '#FFF',
-      letterSpacing: -1.6,
-      lineHeight: 42,
-      includeFontPadding: false,
+    iconHalo: {
+      position: 'absolute',
+      width: 54, height: 54, borderRadius: 27,
+      // Soft bloom behind the glyph, echoing the reference's backlit sun.
+      opacity: 0.26,
     },
+    bigEmoji: { fontSize: 46, lineHeight: 54 },
     condition: {
-      fontSize: 12,
+      fontSize: 15,
       fontWeight: '700',
-      color: '#FFFFFFEE',
-      letterSpacing: -0.1,
-      paddingBottom: 6,
-    },
-    metaRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      flexWrap: 'wrap',
+      color: '#FFF',
+      letterSpacing: -0.2,
       marginTop: 1,
     },
-    metaText: {
-      fontSize: 11,
-      fontWeight: '600',
-      color: '#FFFFFFAE',
-      letterSpacing: 0.1,
+    rangeRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+    rangeGap: { marginLeft: 10 },
+    rangeVal: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: '#FFFFFFEE',
+      marginLeft: 2,
+      letterSpacing: -0.2,
     },
-    metaDot: {
-      width: 2, height: 2, borderRadius: 1,
-      backgroundColor: '#FFFFFF60',
-      marginHorizontal: 6,
+    tempCol: { alignItems: 'flex-end' },
+    tempRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 2 },
+    temp: {
+      fontSize: 52,
+      fontWeight: '300',
+      color: '#FFF',
+      letterSpacing: -2.4,
+      lineHeight: 56,
+      includeFontPadding: false,
     },
-    rightCol: {
-      alignItems: 'flex-end',
-      gap: 6,
+    degree: {
+      fontSize: 22,
+      fontWeight: '400',
+      color: '#FFFFFFE0',
+      lineHeight: 28,
+      includeFontPadding: false,
     },
-    locPill: {
+    placeRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 3,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 10,
-      backgroundColor: '#FFFFFF1F',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: '#FFFFFF30',
-      maxWidth: 130,
+      marginTop: 1,
+      maxWidth: 150,
     },
-    locText: {
-      fontSize: 10.5,
+    metaPlace: {
+      fontSize: 11.5,
       fontWeight: '700',
-      color: '#FFFFFFEE',
-      letterSpacing: 0.3,
+      color: '#FFFFFFDD',
+      letterSpacing: 0.1,
       flexShrink: 1,
     },
-    refreshChip: {
-      width: 28, height: 28, borderRadius: 10,
-      backgroundColor: '#FFFFFF1F',
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: '#FFFFFF30',
-      alignItems: 'center', justifyContent: 'center',
+    metaCity: {
+      fontSize: 9.5,
+      fontWeight: '600',
+      color: '#FFFFFF8C',
+      letterSpacing: 0.2,
+      maxWidth: 150,
+      marginTop: 1,
     },
-    refreshChipPressed: {
-      backgroundColor: '#FFFFFF35',
-      transform: [{ scale: 0.92 }],
-    },
-    /* Hourly strip: horizontal scroll, slim */
-    hourlyScroll: {
-      marginHorizontal: -4,
-    },
-    hourlyContent: {
-      flexDirection: 'row',
-      gap: 4,
-      paddingHorizontal: 4,
+    /* Hourly pills — tall rounded capsules, as in the reference. */
+    hourRow: { flexDirection: 'row', gap: 5 },
+    hourPill: {
+      flex: 1,
       alignItems: 'center',
+      gap: 2,
+      paddingVertical: 7,
+      // Near-stadium radius is the reference's signature for these slots.
+      borderRadius: 18,
     },
-
+    hourPillNow: {
+      backgroundColor: '#FFFFFF2E',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: '#FFFFFF45',
+    },
+    hourLabel: { fontSize: 9.5, fontWeight: '700', color: '#FFFFFFC0' },
+    hourEmoji: { fontSize: 17, lineHeight: 21 },
+    hourTemp: { fontSize: 11.5, fontWeight: '700', color: '#FFFFFFEE' },
+    refreshChip: {
+      width: 24, height: 24, borderRadius: 12,
+      alignItems: 'center', justifyContent: 'center',
+      backgroundColor: '#FFFFFF1A',
+    },
+    refreshChipPressed: { backgroundColor: '#FFFFFF33' },
     placeholderCard: {
       borderRadius: 22,
       padding: 14,
@@ -278,86 +297,116 @@ export function WeatherCard({ onPrimary = true }: Props) {
     );
   }
 
-  const translateY = bob.interpolate({ inputRange: [0, 1], outputRange: [-2, 2] });
-  const scale = bob.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] });
-  const hourly = snap.hourly?.length ? snap.hourly.slice(0, 8) : [];
+  // Reference cards show a live clock and short date on the right. Derived from
+  // fetchedAt rather than Date.now() so the text always matches the data shown.
+  const stamp = new Date(snap.fetchedAt);
+  const clockLabel = stamp.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  // Five pills is what fits at this width without the labels truncating.
+  const hourly = snap.hourly?.length ? snap.hourly.slice(0, 5) : [];
 
   return (
-    <Pressable onPress={() => load(true)} style={styles.card}>
-      <View style={styles.sheen} />
-      <View style={styles.accentBlob} />
+    <Pressable
+      // Tapping the card opens the full forecast; the refresh chip in the top
+      // bar handles reloading, so the two actions no longer collide.
+      onPress={() => navigation.navigate('WeatherDetail')}
+      style={styles.card}
+    >
+      {/* Background is layered bottom-to-top:
+            1. opaque sky gradient   — the palette for these exact conditions
+            2. animated decoration   — rain, snow, stars, drifting cloud…
+            3. readability scrim     — guarantees text contrast over any sky
+          All three are skipped until the first fetch resolves, so the card
+          never flashes a wrong sky and then corrects itself. */}
+      {wx ? (
+        <>
+          <WeatherGradient colors={wx.gradient} />
+          <WeatherDecor theme={wx} />
+          <View style={styles.scrimTop} />
+          <View style={styles.scrimBody} />
+        </>
+      ) : (
+        <>
+          <View style={styles.sheen} />
+          <View style={styles.accentBlob} />
+        </>
+      )}
 
       <View style={styles.inner}>
-        {/* Hero — single tight row */}
-        <View style={styles.heroRow}>
-          <Animated.View style={[styles.emojiWrap, { transform: [{ translateY }, { scale }] }]}>
-            <Text style={styles.emoji}>{snap.emoji}</Text>
-          </Animated.View>
-
-          <View style={styles.midCol}>
-            <View style={styles.tempRow}>
-              <Text style={styles.temp}>{snap.temperature}°</Text>
-              <Text style={styles.condition} numberOfLines={1}>
-                {snap.condition}
-                {snap.isWindy ? ' · Windy' : ''}
-              </Text>
+        {/* Top zone: big icon + condition + H/L on the left, temperature and
+            location on the right — the reference's arrangement. */}
+        <View style={styles.topZone}>
+          <View style={styles.iconCol}>
+            <View style={styles.iconWrap}>
+              <View style={[styles.iconHalo, { backgroundColor: wx?.glowColor ?? accent }]} />
+              <Text style={styles.bigEmoji}>{snap.emoji}</Text>
             </View>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaText}>H {snap.highToday}°</Text>
-              <View style={styles.metaDot} />
-              <Text style={styles.metaText}>L {snap.lowToday}°</Text>
-              <View style={styles.metaDot} />
-              <Text style={styles.metaText}>💧 {snap.humidity}%</Text>
-              <View style={styles.metaDot} />
-              <Text style={styles.metaText}>{snap.windKph} km/h</Text>
+            <Text style={styles.condition} numberOfLines={1}>{snap.condition}</Text>
+            <View style={styles.rangeRow}>
+              <Ionicons name="arrow-up" size={12} color="#FFC93C" />
+              <Text style={styles.rangeVal}>{snap.highToday}°</Text>
+              <Ionicons name="arrow-down" size={12} color="#5AA9F0" style={styles.rangeGap} />
+              <Text style={styles.rangeVal}>{snap.lowToday}°</Text>
             </View>
           </View>
 
-          <View style={styles.rightCol}>
-            <View style={styles.locPill}>
-              <Ionicons name="location-sharp" size={10} color="#FFFFFFEE" />
-              <Text style={styles.locText} numberOfLines={1}>{snap.locationLabel}</Text>
-            </View>
+          <View style={styles.tempCol}>
             <Pressable
               onPress={(e) => {
                 e.stopPropagation?.();
                 load(true);
               }}
-              hitSlop={10}
+              hitSlop={12}
               style={({ pressed }) => [styles.refreshChip, pressed && styles.refreshChipPressed]}
             >
               {loading ? (
                 <ActivityIndicator size={11} color="#FFF" />
               ) : (
-                <Animated.View
-                  style={{
-                    transform: [
-                      {
-                        rotate: bob.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }),
-                      },
-                    ],
-                  }}
-                >
-                  <Ionicons name="refresh" size={12} color="#FFF" />
-                </Animated.View>
+                <Ionicons name="refresh" size={12} color="#FFFFFFCC" />
               )}
             </Pressable>
+            <View style={styles.tempRow}>
+              <Text style={styles.temp}>{snap.temperature}</Text>
+              <Text style={styles.degree}>°</Text>
+            </View>
+            {/* Locality is the point of this line: the city alone reads as a
+                region rather than where the user actually is. */}
+            <View style={styles.placeRow}>
+              <Ionicons name="location" size={10} color="#FFFFFFC0" />
+              <Text style={styles.metaPlace} numberOfLines={1}>
+                {snap.localityLabel ?? snap.locationLabel}
+              </Text>
+            </View>
+            <Text style={styles.metaCity} numberOfLines={1}>
+              {snap.localityLabel ? snap.locationLabel : clockLabel}
+            </Text>
           </View>
         </View>
 
-        {/* Hourly strip — horizontal scroll */}
-        {hourly.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.hourlyScroll}
-            contentContainerStyle={styles.hourlyContent}
-          >
+        {/* Hourly pills, back on the card as the reference has them. */}
+        {hourly.length > 0 ? (
+          <View style={styles.hourRow}>
             {hourly.map((slot, i) => (
-              <HourPill key={slot.ts} slot={slot} isFirst={i === 0} />
+              <View
+                key={slot.ts}
+                style={[
+                  styles.hourPill,
+                  { backgroundColor: wx?.pillColor ?? '#FFFFFF14' },
+                  i === 0 && styles.hourPillNow,
+                ]}
+              >
+                <Text style={styles.hourLabel} numberOfLines={1}>
+                  {i === 0 ? 'Now' : hourText(slot.ts)}
+                </Text>
+                <Text style={styles.hourEmoji}>{slot.emoji}</Text>
+                <Text style={styles.hourTemp}>{Math.round(slot.temperature)}°</Text>
+              </View>
             ))}
-          </ScrollView>
-        )}
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );

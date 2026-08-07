@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { AdBanner } from '../components/AdBanner';
+import { AdBanner, AD_BANNER_HEIGHT, SCREEN_BOTTOM_INSET } from '../components/AdBanner';
+import { RippleFab } from '../components/RippleFab';
+import { fontStyle } from '../core/fonts';
 import {
   View,
   Text,
@@ -14,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Icon } from '../components/Icons';
 import { useApp } from '../context/AppContext';
+import { moveToTrash, setArchived } from '../services/archiveService';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
 import type { Note } from '../types';
@@ -51,6 +54,7 @@ export function NoteListScreen() {
     deleteAllNotes,
     getFolder,
     getTag,
+    reloadFromStorage,
   } = useApp();
   const [searchFocused, setSearchFocused] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -155,7 +159,7 @@ export function NoteListScreen() {
         },
         filterChipText: { ...theme.typography.caption, color: theme.colors.textSecondary, fontWeight: '500' },
         filterChipTextOn: { color: theme.colors.primaryDark, fontWeight: '600' },
-        list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: 180 },
+        list: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm, paddingBottom: SCREEN_BOTTOM_INSET },
         noteCard: {
           backgroundColor: theme.colors.cardBg,
           borderRadius: theme.borderRadius.lg,
@@ -238,8 +242,8 @@ export function NoteListScreen() {
         fab: {
           position: 'absolute',
           right: theme.spacing.xl,
-          // Above the floating tab bar (~76dp) + AdBanner (~60dp) + system nav inset
-          bottom: insets.bottom + 60 + 76 + 24,
+          // Above the floating tab bar (~76dp) + ad banner + system nav inset
+          bottom: insets.bottom + AD_BANNER_HEIGHT + 76 + 24,
           width: 58,
           height: 58,
           borderRadius: 29,
@@ -297,13 +301,21 @@ export function NoteListScreen() {
               'Choose an action',
               [
                 {
-                  text: 'Delete',
+                  // Trash, not delete: recoverable for 30 days from
+                  // Settings → Archive & Trash.
+                  text: 'Move to trash',
                   style: 'destructive',
-                  onPress: () =>
-                    Alert.alert('Delete note?', 'This cannot be undone.', [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: () => deleteNote(item.id) },
-                    ]),
+                  onPress: async () => {
+                    await moveToTrash('note', item.id);
+                    await reloadFromStorage();
+                  },
+                },
+                {
+                  text: 'Archive',
+                  onPress: async () => {
+                    await setArchived('note', item.id, true);
+                    await reloadFromStorage();
+                  },
                 },
                 {
                   text: item.isFavorite ? 'Unfavorite' : 'Favorite',
@@ -320,7 +332,10 @@ export function NoteListScreen() {
           activeOpacity={0.8}
         >
           <View style={styles.noteHeader}>
-            <Text style={[styles.noteTitle, { color: '#1a1a2e' }]} numberOfLines={1}>
+            <Text
+              style={[styles.noteTitle, { color: '#1a1a2e' }, fontStyle(item.fontId)]}
+              numberOfLines={1}
+            >
               {item.title || 'Untitled'}
             </Text>
             <View style={styles.noteBadges}>
@@ -343,7 +358,7 @@ export function NoteListScreen() {
         </TouchableOpacity>
       );
     },
-    [getFolder, getTag, openNote, styles, toggleFavorite, togglePin, deleteNote, theme]
+    [getFolder, getTag, openNote, reloadFromStorage, styles, toggleFavorite, togglePin, theme]
   );
 
   const categoryLabels: Record<string, string> = {
@@ -436,6 +451,15 @@ export function NoteListScreen() {
         contentContainerStyle={styles.filterRow}
       >
         <TouchableOpacity
+          style={[styles.filterChip, !!filter.folderId && styles.filterChipOn]}
+          onPress={() => navigation.navigate('Notebooks')}
+        >
+          <Icon name="folder" size={16} />
+          <Text style={[styles.filterChipText, !!filter.folderId && styles.filterChipTextOn]}>
+            {filter.folderId ? getFolder(filter.folderId)?.name ?? 'Notebooks' : 'Notebooks'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={[styles.filterChip, filter.favoritesOnly && styles.filterChipOn]}
           onPress={() => setFilter({ favoritesOnly: !filter.favoritesOnly })}
         >
@@ -491,9 +515,16 @@ export function NoteListScreen() {
 
       <AdBanner />
 
-      <TouchableOpacity style={styles.fab} onPress={openNewNote} activeOpacity={0.9}>
-        <Icon name="add" size={30} color={theme.colors.surface} />
-      </TouchableOpacity>
+      <RippleFab
+        icon="add"
+        onPress={openNewNote}
+        accessibilityLabel="New note"
+        position={{
+          right: theme.spacing.xl,
+          bottom: insets.bottom + AD_BANNER_HEIGHT + 76 + 24,
+        }}
+        iconSize={30}
+      />
     </View>
   );
 }

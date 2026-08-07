@@ -37,6 +37,7 @@ import { evaluateAndScheduleComeback } from '../services/comebackService';
 import { shouldShowBrewNow } from '../services/morningBrewService';
 import { navigateTo } from '../services/navigationService';
 import { detectDeviceCountry } from '../services/holidayService';
+import { stripHtml } from '../utils/stripHtml';
 
 // ─── Default task categories ────────────────────────
 const DEFAULT_CATEGORIES: TaskCategory[] = [
@@ -80,7 +81,11 @@ interface AppContextValue extends AppState {
   setNoteColor: (noteId: string, color: string | null) => void;
 
   // Folders
-  addFolder: (name: string, parentId?: string | null) => Folder;
+  addFolder: (
+    name: string,
+    parentId?: string | null,
+    cover?: { color?: string | null; icon?: string | null },
+  ) => Folder;
   updateFolder: (id: string, patch: Partial<Folder>) => void;
   deleteFolder: (id: string) => void;
   getFolder: (id: string) => Folder | undefined;
@@ -136,6 +141,8 @@ interface AppContextValue extends AppState {
   repairCurrentStreak: () => Promise<boolean>;
 
   // Cloud sync
+  /** Re-reads notes and tasks from the database. */
+  reloadFromStorage: () => Promise<void>;
   restoreData: (data: {
     notes?: Note[]; folders?: Folder[]; tags?: Tag[];
     reminders?: Reminder[]; tasks?: Task[]; taskCategories?: TaskCategory[];
@@ -452,8 +459,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ─── Folders ────────────────────────────────────────
-  const addFolder = useCallback((name: string, parentId: string | null = null): Folder => {
-    const newFolder: Folder = { id: generateId(), name, parentId, order: folders.length, createdAt: Date.now() };
+  const addFolder = useCallback((
+    name: string,
+    parentId: string | null = null,
+    cover?: { color?: string | null; icon?: string | null },
+  ): Folder => {
+    const newFolder: Folder = {
+      id: generateId(), name, parentId,
+      order: folders.length, createdAt: Date.now(),
+      color: cover?.color ?? null,
+      icon: cover?.icon ?? null,
+    };
     setFolders((prev) => [...prev, newFolder]);
     return newFolder;
   }, [folders.length]);
@@ -463,8 +479,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteFolder = useCallback((id: string) => {
-    setFolders((prev) => prev.filter((f) => f.id !== id));
-    setNotes((prev) => prev.map((n) => (n.folderId === id ? { ...n, folderId: null } : n)));
+    setFolders((prev) => {
+      // Children would otherwise be left pointing at a folder that no longer
+      // exists, making them invisible in every list.
+      const doomed = new Set([id, ...prev.filter((f) => f.parentId === id).map((f) => f.id)]);
+      setNotes((notes) =>
+        notes.map((n) => (n.folderId && doomed.has(n.folderId) ? { ...n, folderId: null } : n)),
+      );
+      return prev.filter((f) => !doomed.has(f.id));
+    });
   }, []);
 
   const getFolder = useCallback((id: string) => folders.find((f) => f.id === id), [folders]);
@@ -539,7 +562,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const filteredNotes = useMemo(() => {
-    let list = [...notes];
+    // Archived and trashed notes are kept in the database but never listed;
+    // they are reachable only from Settings → Archive & Trash.
+    let list = notes.filter((n) => !n.archived && !n.trashedAt);
     if (filter.folderId) list = list.filter((n) => n.folderId === filter.folderId);
     if (filter.tagIds.length) list = list.filter((n) => filter.tagIds.every((tid) => n.tagIds.includes(tid)));
     if (filter.category) list = list.filter((n) => n.category === filter.category);
@@ -698,13 +723,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const filteredTasks = useMemo(() => {
-    let list = [...tasks];
+    let list = tasks.filter((t) => !t.archived && !t.trashedAt);
     if (!taskFilter.showCompleted) list = list.filter((t) => !t.completed);
     if (taskFilter.categoryId) list = list.filter((t) => t.categoryId === taskFilter.categoryId);
     if (taskFilter.searchQuery.trim()) {
       const q = taskFilter.searchQuery.toLowerCase();
       list = list.filter((t) =>
-        t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q)
+        t.title.toLowerCase().includes(q) || stripHtml(t.notes).toLowerCase().includes(q)
       );
     }
     const mult = taskFilter.sortOrder === 'asc' ? 1 : -1;
@@ -732,6 +757,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const m = new Map<string, Task[]>();
     for (const t of tasks) {
       if (!t.dueDate) continue;
+      // Archived/trashed tasks must not appear on the planner or MyDay.
+      if (t.archived || t.trashedAt) continue;
       const d = new Date(t.dueDate);
       const k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       const arr = m.get(k);
@@ -748,10 +775,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [tasksByDateKey]);
 
   const taskStats = useMemo<TaskStats>(() => {
-    const completed = tasks.filter((t) => t.completed).length;
-    const pending = tasks.filter((t) => !t.completed).length;
+    const live = tasks.filter((t) => !t.archived && !t.trashedAt);
+    const completed = live.filter((t) => t.completed).length;
+    const pending = live.filter((t) => !t.completed).length;
     const byCategory: Record<string, number> = {};
-    tasks.filter((t) => !t.completed).forEach((t) => {
+    live.filter((t) => !t.completed).forEach((t) => {
       const key = t.categoryId || 'uncategorized';
       byCategory[key] = (byCategory[key] || 0) + 1;
     });
@@ -763,7 +791,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const dayStart = day.getTime();
       const dayEnd = dayStart + 86400000;
       weeklyCompleted.push(
-        tasks.filter((t) => t.completed && t.updatedAt >= dayStart && t.updatedAt < dayEnd).length
+        live.filter((t) => t.completed && t.updatedAt >= dayStart && t.updatedAt < dayEnd).length
       );
     }
     return { completed, pending, byCategory, weeklyCompleted };
@@ -787,6 +815,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (data.tasks !== undefined) setTasks(data.tasks);
     if (data.taskCategories !== undefined) setTaskCategories(data.taskCategories.length > 0 ? data.taskCategories : DEFAULT_CATEGORIES);
     if (data.settings !== undefined) setSettings(data.settings);
+  }, []);
+
+  /**
+   * Re-reads notes and tasks from the database.
+   *
+   * Archive and trash write directly to SQLite, bypassing this context — so
+   * after those operations the in-memory lists are stale until this runs.
+   */
+  const reloadFromStorage = useCallback(async () => {
+    try {
+      const [freshNotes, freshTasks] = await Promise.all([
+        storage.getNotes(),
+        storage.getTasks(),
+      ]);
+      setNotes(freshNotes);
+      setTasks(freshTasks);
+    } catch { /* keep what is already in memory */ }
   }, []);
 
   // ─── Streak ───────────────────────────────────────
@@ -828,7 +873,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
-      updateSettings, recordStreakActivity, repairCurrentStreak, restoreData,
+      updateSettings, recordStreakActivity, repairCurrentStreak, restoreData, reloadFromStorage,
     }),
     [
       notes, folders, tags, reminders, filter, loaded,
@@ -842,7 +887,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       toggleSubTaskComplete, addSubTask, deleteSubTask,
       addTaskCategory, updateTaskCategory, deleteTaskCategory, getTaskCategory,
       setTaskFilter, setTaskSort, filteredTasks, tasksForDate, taskStats,
-      updateSettings, recordStreakActivity, repairCurrentStreak, restoreData,
+      updateSettings, recordStreakActivity, repairCurrentStreak, restoreData, reloadFromStorage,
     ]
   );
 

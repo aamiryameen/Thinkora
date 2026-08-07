@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Image,
   View,
   Text,
   StyleSheet,
@@ -19,6 +20,12 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RichNoteEditor, RichNoteEditorHandle } from '../components/RichNoteEditor';
+import { BackgroundPickerSheet } from '../components/BackgroundPickerSheet';
+import { FontPickerSheet } from '../components/FontPickerSheet';
+import { usePremium } from '../services/premiumService';
+import { PremiumGateSheet } from '../components/PremiumGateSheet';
+import { fontStyle } from '../core/fonts';
+import { moveToTrash } from '../services/archiveService';
 import { AttachmentList } from '../components/AttachmentList';
 import { SketchCanvasModal } from '../components/SketchCanvas';
 import { Icon } from '../components/Icons';
@@ -76,6 +83,7 @@ export function NoteEditorScreen() {
     addNote,
     updateNote,
     deleteNote,
+    reloadFromStorage,
     addReminder,
     updateReminder,
     removeReminder,
@@ -181,6 +189,12 @@ export function NoteEditorScreen() {
   const [sketchModal, setSketchModal] = useState(false);
   const [attachMenuVisible, setAttachMenuVisible] = useState(false);
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
+  const { hasPremium } = usePremium();
+  const [bgPickerVisible, setBgPickerVisible] = useState(false);
+  const [fontPickerVisible, setFontPickerVisible] = useState(false);
+  const [fontGateVisible, setFontGateVisible] = useState(false);
+  const [backgroundUri, setBackgroundUri] = useState<string | null>(note?.backgroundUri ?? null);
+  const [fontId, setFontId] = useState<string>(note?.fontId ?? 'default');
   const [noteColor, setNoteColorState] = useState<string | null>(note?.color ?? null);
   const [showAISuggestions, setShowAISuggestions] = useState(false);
   /** Gemini action result modal state. */
@@ -322,6 +336,8 @@ export function NoteEditorScreen() {
         category,
         attachments,
         reminderId: null,
+        backgroundUri,
+        fontId,
       });
       if (pendingReminderDate) {
         const r = await addReminder({
@@ -346,8 +362,12 @@ export function NoteEditorScreen() {
       attachments,
       reminderId,
       color: noteColor,
+      backgroundUri,
+      fontId,
     });
   }, [
+    backgroundUri,
+    fontId,
     isNew,
     title,
     content,
@@ -559,11 +579,21 @@ export function NoteEditorScreen() {
 
   const confirmDelete = useCallback(() => {
     if (!noteId) return;
-    Alert.alert('Delete note', 'Are you sure?', [
+    // Trash rather than destroy, so this matches the list's long-press action
+    // and stays recoverable from Settings → Archive & Trash.
+    Alert.alert('Move to trash', 'You can restore it from Settings for 30 days.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => { deleteNote(noteId); navigation.goBack(); } },
+      {
+        text: 'Move to trash',
+        style: 'destructive',
+        onPress: async () => {
+          await moveToTrash('note', noteId);
+          await reloadFromStorage();
+          navigation.goBack();
+        },
+      },
     ]);
-  }, [noteId, deleteNote, navigation]);
+  }, [navigation, noteId, reloadFromStorage]);
 
   const NOTE_COLORS = [
     null, // default
@@ -810,7 +840,11 @@ export function NoteEditorScreen() {
           marginHorizontal: theme.spacing.lg,
           marginTop: theme.spacing.lg,
           borderRadius: theme.borderRadius.xxl,
-          backgroundColor: theme.colors.cardBg,
+          // Translucent when a background image is set, so the image reads
+          // through rather than being hidden by an opaque card.
+          backgroundColor: backgroundUri
+            ? theme.colors.surface + 'B8'
+            : theme.colors.cardBg,
           overflow: 'hidden',
           paddingBottom: theme.spacing.md,
           ...theme.shadows.elevated,
@@ -980,7 +1014,7 @@ export function NoteEditorScreen() {
         repeatRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, flexWrap: 'wrap' },
         repeatLabel: { ...theme.typography.bodySmall, color: theme.colors.textMuted, fontWeight: '500' },
 
-        bottomPad: { height: 80 },
+        bottomPad: { height: 80 + insets.bottom },
 
         /* ── Attachment bottom sheet ─────────────── */
         attachOverlay: {
@@ -1173,13 +1207,30 @@ export function NoteEditorScreen() {
         /* Tone chooser chips */
         toneChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
       }),
-    [theme, insets.top, insets.bottom]
+    [backgroundUri, theme, insets.top, insets.bottom]
   );
 
   const catMeta = CATEGORY_META[category];
 
   return (
     <View style={styles.container}>
+      {/* Page background sits behind everything, not just the editor card. */}
+      {backgroundUri && (
+        <>
+          <Image
+            source={{ uri: backgroundUri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+          {/* Scrim: text over an arbitrary photo is unreadable without it. */}
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: theme.colors.background + 'C4' },
+            ]}
+          />
+        </>
+      )}
       {/* ── Header ── */}
       <View style={styles.header}>
         {/* Top row: back, category + date, Save */}
@@ -1219,6 +1270,12 @@ export function NoteEditorScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={[styles.headerIconBtn, noteColor ? { backgroundColor: noteColor, borderWidth: 2, borderColor: theme.colors.border } : null]} onPress={() => setColorPickerVisible(true)} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
             <Ionicons name="color-palette-outline" size={20} color={noteColor ? '#1a1a2e' : theme.colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerIconBtn} onPress={() => setBgPickerVisible(true)} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+            <Ionicons name={backgroundUri ? 'image' : 'image-outline'} size={20} color={backgroundUri ? theme.colors.primary : theme.colors.icon} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerIconBtn} onPress={() => setFontPickerVisible(true)} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
+            <Ionicons name="text" size={20} color={fontId !== 'default' ? theme.colors.primary : theme.colors.icon} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerIconBtn} onPress={handleShare} hitSlop={HEADER_HIT_SLOP} activeOpacity={0.7}>
             <Ionicons name="share-outline" size={20} color={theme.colors.icon} />
@@ -1261,6 +1318,7 @@ export function NoteEditorScreen() {
         <View style={styles.editorCard}>
           <RichNoteEditor
             ref={richEditorRef}
+            fontId={fontId}
             title={title}
             content={content}
             onTitleChange={handleTitleChange}
@@ -1634,6 +1692,27 @@ export function NoteEditorScreen() {
       )}
 
       {/* ── Color Picker Modal ── */}
+      <BackgroundPickerSheet
+        visible={bgPickerVisible}
+        currentUri={backgroundUri}
+        onSelect={(uri) => { setBackgroundUri(uri); setBgPickerVisible(false); }}
+        onClose={() => setBgPickerVisible(false)}
+      />
+      <FontPickerSheet
+        visible={fontPickerVisible}
+        currentId={fontId}
+        sample={title.trim().slice(0, 12) || 'Thinkora'}
+        hasPremium={hasPremium}
+        onSelect={(id) => { setFontId(id); setFontPickerVisible(false); }}
+        onLocked={() => { setFontPickerVisible(false); setFontGateVisible(true); }}
+        onClose={() => setFontPickerVisible(false)}
+      />
+      <PremiumGateSheet
+        visible={fontGateVisible}
+        feature="note_fonts"
+        onClose={() => setFontGateVisible(false)}
+      />
+
       <Modal visible={colorPickerVisible} transparent animationType="slide" onRequestClose={() => setColorPickerVisible(false)}>
         <Pressable style={styles.attachOverlay} onPress={() => setColorPickerVisible(false)}>
           <Pressable style={styles.colorPickerSheet} onPress={() => {}}>

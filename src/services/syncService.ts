@@ -7,6 +7,8 @@
  */
 
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../core/env';
+import { getBoards, getItems } from './whiteboardService';
+import type { Board, BoardItem } from '../types/whiteboard';
 import { storage } from './storage';
 import type {
   Note, Folder, Tag, Reminder, Task, TaskCategory, AppSettings,
@@ -164,6 +166,9 @@ export interface BackupPayload {
   tasks: Task[];
   taskCategories: TaskCategory[];
   settings: AppSettings;
+  /** Whiteboards. Optional so older backups still restore. */
+  boards?: Board[];
+  boardItems?: BoardItem[];
   backedUpAt: number;
   appVersion: string;
 }
@@ -174,18 +179,26 @@ export async function backupToCloud(): Promise<void> {
   const token = await getAccessToken();
   if (!token) throw new Error('Session expired — please sign in again');
 
-  const [notes, folders, tags, reminders, tasks, taskCategories, settings] = await Promise.all([
-    storage.getNotes(),
-    storage.getFolders(),
-    storage.getTags(),
-    storage.getReminders(),
-    storage.getTasks(),
-    storage.getTaskCategories(),
-    storage.getSettings(),
-  ]);
+  const [notes, folders, tags, reminders, tasks, taskCategories, settings, boards] =
+    await Promise.all([
+      storage.getNotes(),
+      storage.getFolders(),
+      storage.getTags(),
+      storage.getReminders(),
+      storage.getTasks(),
+      storage.getTaskCategories(),
+      storage.getSettings(),
+      getBoards(true),
+    ]);
+
+  // Items are fetched per board, so gather them after the board list.
+  const boardItems = (
+    await Promise.all(boards.map(b => getItems(b.id)))
+  ).flat();
 
   const payload: BackupPayload = {
     notes, folders, tags, reminders, tasks, taskCategories, settings,
+    boards, boardItems,
     backedUpAt: Date.now(),
     appVersion: '2.0',
   };

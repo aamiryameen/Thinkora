@@ -29,10 +29,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
     this.props.onError?.(error, errorInfo);
-    if (__DEV__) {
-      // eslint-disable-next-line no-console
-      console.error('ErrorBoundary caught:', error, errorInfo);
-    }
+    // Logged in every build: a caught crash is worth recording in production
+    // too, where it is otherwise invisible.
+    // eslint-disable-next-line no-console
+    console.error('ErrorBoundary caught:', error, errorInfo);
   }
 
   handleRetry = (): void => {

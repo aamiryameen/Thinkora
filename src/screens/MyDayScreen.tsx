@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Alert } from 'react-native';
-import { AdBanner } from '../components/AdBanner';
+import { AdBanner, SCREEN_BOTTOM_INSET } from '../components/AdBanner';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,12 +9,15 @@ import { TaskCard } from '../components/TaskCard';
 import { StreakCard } from '../components/StreakCard';
 import { MilestoneCelebrationModal } from '../components/MilestoneCelebrationModal';
 import { loadPulseState, isPulseDoneToday, type DailyPulseState } from '../services/dailyPulseService';
-import { MorningBriefingCard } from '../components/MorningBriefingCard';
 import { WeatherCard } from '../components/WeatherCard';
+import { SpeedDialFab, type SpeedDialAction } from '../components/SpeedDialFab';
 import { useApp } from '../context/AppContext';
 import { useFeatures } from '../context/FeaturesContext';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
+import { getDailyQuote } from '../core/quotes';
+import { getBlocksForDate, getDay, todayKey } from '../services/plannerService';
+import type { PlannerBlock, PlannerDay } from '../types/planner';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -24,39 +27,39 @@ function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const MOTIVATIONAL_QUOTES = [
-  { text: 'The secret of getting ahead is getting started.', author: 'Mark Twain' },
-  { text: 'Small daily improvements are the key to staggering long-term results.', author: '' },
-  { text: 'Focus on being productive instead of busy.', author: 'Tim Ferriss' },
-  { text: "You don't have to be great to start, but you have to start to be great.", author: 'Zig Ziglar' },
-  { text: 'A journey of a thousand miles begins with a single step.', author: 'Lao Tzu' },
-  { text: 'Do the hard jobs first. The easy jobs will take care of themselves.', author: 'Dale Carnegie' },
-  { text: "It's not about having time, it's about making time.", author: '' },
-  { text: 'Progress, not perfection.', author: '' },
-  { text: 'Every day is a fresh start.', author: '' },
-  { text: 'Done is better than perfect.', author: '' },
-];
-
 const QUICK_ACTIONS = [
   { label: 'New Task', icon: 'add-circle-outline', color: '#4A90D9', route: 'TaskEditor' },
-  { label: 'Habits', icon: 'flame-outline', color: '#F59E0B', route: 'HabitTracker' },
+  { label: 'Planner', icon: 'today-outline', color: '#6366F1', route: 'DailyPlanner' },
   { label: 'Focus', icon: 'timer-outline', color: '#14B8A6', route: 'Pomodoro' },
-  { label: 'Journal', icon: 'happy-outline', color: '#EC4899', route: 'MoodJournal' },
+  { label: 'Sketch', icon: 'brush-outline', color: '#FF6347', route: 'Sketch' },
 ] as const;
 
+/**
+ * Explore grid, ordered by value to the user rather than by when each feature
+ * was built. The first two rows (six items) are the app's headline features —
+ * the ones worth discovering first — so they stay above the fold.
+ */
 const FEATURE_SHORTCUTS = [
-  { label: 'Voice', icon: 'mic-outline', color: '#8B5CF6', route: 'VoiceCapture' },
-  { label: 'Matrix', icon: 'grid-outline', color: '#8B5CF6', route: 'Eisenhower' },
-  { label: 'Lists', icon: 'people-outline', color: '#3B82F6', route: 'SharedLists' },
+  // ── Rows 1–2: headline features ──
+  { label: 'Planner', icon: 'today-outline', color: '#6366F1', route: 'DailyPlanner' },
+  { label: 'Weekly', icon: 'calendar-number-outline', color: '#0EA5E9', route: 'WeeklyPlanner' },
+  { label: 'AI Knowledge', icon: 'library-outline', color: '#8B5CF6', route: 'KnowledgeBases' },
+  { label: 'Calendar', icon: 'calendar-outline', color: '#EF4444', route: 'Calendar' },
   { label: 'Focus', icon: 'timer-outline', color: '#14B8A6', route: 'Pomodoro' },
-  { label: 'Quotes', icon: 'chatbubble-ellipses-outline', color: '#7C3AED', route: 'Quotes' },
+  { label: 'Budget', icon: 'wallet-outline', color: '#10B981', route: 'Budget' },
+  { label: 'Medicine', icon: 'medkit-outline', color: '#EF4444', route: 'Medicine' },
+  { label: 'Whiteboard', icon: 'grid-outline', color: '#8B5CF6', route: 'Whiteboards' },
+  // ── Rows 3+: everything else ──
+  { label: 'Habits', icon: 'flame-outline', color: '#F59E0B', route: 'HabitTracker' },
+  { label: 'Goals', icon: 'trophy-outline', color: '#F59E0B', route: 'Goals' },
+  { label: 'Voice', icon: 'mic-outline', color: '#8B5CF6', route: 'VoiceCapture' },
+  { label: 'Journal', icon: 'happy-outline', color: '#EC4899', route: 'MoodJournal' },
+  { label: 'Matrix', icon: 'grid-outline', color: '#8B5CF6', route: 'Eisenhower' },
+  { label: 'Stats', icon: 'stats-chart-outline', color: '#10B981', route: 'ProductivityStats' },
+  { label: 'Reports', icon: 'bar-chart-outline', color: '#4A90D9', route: 'Reports' },
+  { label: 'Lists', icon: 'people-outline', color: '#3B82F6', route: 'SharedLists' },
   { label: 'Templates', icon: 'copy-outline', color: '#6366F1', route: 'Templates' },
   { label: 'Badges', icon: 'trophy-outline', color: '#F59E0B', route: 'Badges' },
-  { label: 'Rewards', icon: 'ribbon-outline', color: '#F97316', route: 'StreakRewards' },
-  { label: 'Reports', icon: 'bar-chart-outline', color: '#4A90D9', route: 'Reports' },
-  { label: 'Categories', icon: 'pricetags-outline', color: '#10B981', route: 'CategoryManager' },
-  { label: 'Habits', icon: 'flame-outline', color: '#EF4444', route: 'HabitTracker' },
-  { label: 'Journal', icon: 'happy-outline', color: '#EC4899', route: 'MoodJournal' },
 ] as const;
 
 export function MyDayScreen() {
@@ -66,6 +69,12 @@ export function MyDayScreen() {
   const { tasks, toggleTaskComplete, getTaskCategory, taskStats, streak, repairCurrentStreak } = useApp();
   const [celebrateMilestone, setCelebrateMilestone] = useState<number | null>(null);
   const seenMilestonesRef = React.useRef<Set<number> | null>(null);
+
+  // `Tasks` is a sibling tab inside `Home`, not a root stack route — target it
+  // through the nested-navigation form so the tab navigator handles it.
+  const goToTasksTab = useCallback(() => {
+    navigation.navigate('Home', { screen: 'Tasks' });
+  }, [navigation]);
 
   // Detect newly-reached milestones so we can pop the celebration modal.
   // Initialize the seen set with whatever was already celebrated so opening
@@ -115,11 +124,8 @@ export function MyDayScreen() {
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const dayEnd = dayStart + 86400000;
 
-  // Quote of the day (changes daily)
-  const dailyQuote = useMemo(() => {
-    const dayOfYear = Math.floor((now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000);
-    return MOTIVATIONAL_QUOTES[dayOfYear % MOTIVATIONAL_QUOTES.length];
-  }, []);
+  // Quote of the day — unique for 120 consecutive days (shared collection)
+  const dailyQuote = useMemo(() => getDailyQuote(now), [today]);
 
   // Tasks
   const overdueTasks = useMemo(() => tasks.filter((t) => !t.completed && t.dueDate && t.dueDate < dayStart), [tasks]);
@@ -163,6 +169,37 @@ export function MyDayScreen() {
   // Badges
   const unlockedBadges = useMemo(() => badges.filter(b => b.unlockedAt), [badges]);
 
+  // Daily Planner summary — always about *today*, independent of whatever date
+  // the planner screen happens to be showing. Refreshed on focus.
+  const [plannerToday, setPlannerToday] = useState<{ blocks: PlannerBlock[]; day: PlannerDay } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      const key = todayKey();
+      Promise.all([getBlocksForDate(key), getDay(key)])
+        .then(([blocks, plan]) => { if (alive) setPlannerToday({ blocks, day: plan }); })
+        .catch(() => { /* planner data is optional on this screen */ });
+    };
+    load();
+    const unsubscribe = navigation.addListener?.('focus', load);
+    return () => { alive = false; unsubscribe?.(); };
+  }, [navigation]);
+
+  const plannerSummary = useMemo(() => {
+    if (!plannerToday) return { hasPlan: false, label: 'Set a focus and block time for what matters' };
+    const { blocks, day: plan } = plannerToday;
+    const hasPlan = blocks.length > 0 || !!plan.focus.trim() || plan.topPriorities.length > 0;
+    if (!hasPlan) {
+      return { hasPlan: false, label: 'Set a focus and block time for what matters' };
+    }
+    if (plan.focus.trim()) return { hasPlan: true, label: plan.focus.trim() };
+    const done = blocks.filter(b => b.completed).length;
+    const priorities = plan.topPriorities.length;
+    const parts = [`${done}/${blocks.length} blocks done`];
+    if (priorities > 0) parts.push(`${plan.topPriorities.filter(p => p.completed).length}/${priorities} priorities`);
+    return { hasPlan: true, label: parts.join(' · ') };
+  }, [plannerToday]);
+
   // Completion percentage
   const completionPct = useMemo(() => {
     const total = tasks.length;
@@ -189,6 +226,21 @@ export function MyDayScreen() {
   const maxWeekly = Math.max(...weeklyTrend.map(d => Math.max(d.completed, d.total, 1)));
 
   const MOOD_EMOJIS = ['', '😞', '😕', '😐', '🙂', '😊'];
+
+  const fabActions = useMemo<SpeedDialAction[]>(() => [
+    {
+      key: 'whiteboard', label: 'Whiteboard', icon: 'grid-outline', color: '#8B5CF6',
+      onPress: () => navigation.navigate('Whiteboards'),
+    },
+    {
+      key: 'medicine', label: 'Medicine Reminder', icon: 'medkit-outline', color: '#EF4444',
+      onPress: () => navigation.navigate('Medicine'),
+    },
+    {
+      key: 'budget', label: 'Budget & Expense', icon: 'wallet-outline', color: '#10B981',
+      onPress: () => navigation.navigate('Budget'),
+    },
+  ], [navigation]);
 
   const styles = useMemo(() => StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.colors.background },
@@ -247,7 +299,7 @@ export function MyDayScreen() {
     miniStatNum: { fontSize: 18, fontWeight: '800', color: '#FFF' },
     miniStatLabel: { ...theme.typography.caption, color: '#FFFFFFBB', fontSize: 10 },
     // Scroll
-    scrollOuter: { paddingBottom: 180 },
+    scrollOuter: { paddingBottom: SCREEN_BOTTOM_INSET },
     scrollBody: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg },
     // Quick actions
     quickActionsRow: { flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.xl },
@@ -376,9 +428,11 @@ export function MyDayScreen() {
         {/* ── Header (now scrolls with the rest of the screen) ── */}
         <View style={styles.header}>
           <View style={styles.headerTop}>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.greeting}>{greeting}!</Text>
-              <Text style={styles.date}>{now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</Text>
+              <Text style={styles.date} numberOfLines={1}>
+                {now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+              </Text>
             </View>
             <TouchableOpacity style={styles.moodBtn} onPress={() => navigation.navigate('MoodJournal')}>
               {todayJournal ? (
@@ -431,7 +485,7 @@ export function MyDayScreen() {
         <View style={styles.scrollBody}>
         {/* ── Morning Briefing ── */}
         <View style={{ marginBottom: 16 }}>
-          <MorningBriefingCard />
+ 
         </View>
 
         {/* ── Quick Actions ── */}
@@ -487,6 +541,35 @@ export function MyDayScreen() {
           </TouchableOpacity>
         )}
 
+        {/* ── Daily Planner entry ── */}
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            padding: 16, borderRadius: 18, marginBottom: 16,
+            backgroundColor: '#6366F118',
+            borderWidth: 1.5, borderColor: '#6366F140',
+          }}
+          onPress={() => navigation.navigate('DailyPlanner')}
+          activeOpacity={0.85}
+        >
+          <View style={{
+            width: 44, height: 44, borderRadius: 22,
+            backgroundColor: '#6366F120',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Ionicons name="today-outline" size={22} color="#6366F1" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, fontWeight: '800', color: theme.colors.text }}>
+              {plannerSummary.hasPlan ? '🗓️ Today\'s plan' : '🗓️ Plan your day'}
+            </Text>
+            <Text style={{ fontSize: 12, color: theme.colors.textMuted, marginTop: 2 }}>
+              {plannerSummary.label}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#6366F1" />
+        </TouchableOpacity>
+
         {/* ── Daily Streak ── */}
         <StreakCard streak={streak} onRepair={handleRepair} />
 
@@ -516,7 +599,7 @@ export function MyDayScreen() {
 
         {/* ── Overdue Alert ── */}
         {overdueTasks.length > 0 && (
-          <TouchableOpacity style={styles.overdueCard} onPress={() => navigation.getParent()?.navigate('Tasks')} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.overdueCard} onPress={goToTasksTab} activeOpacity={0.7}>
             <Ionicons name="alert-circle" size={22} color={theme.colors.error} />
             <Text style={styles.overdueText}>{overdueTasks.length} overdue task{overdueTasks.length > 1 ? 's' : ''} need attention</Text>
             <Ionicons name="chevron-forward" size={16} color={theme.colors.error} />
@@ -593,7 +676,7 @@ export function MyDayScreen() {
               <Text style={styles.sectionCount}>{pendingTasks.length}</Text>
             </Text>
             {pendingTasks.length > 0 && (
-              <TouchableOpacity onPress={() => navigation.getParent()?.navigate('Tasks')}>
+              <TouchableOpacity onPress={goToTasksTab}>
                 <Text style={styles.seeAll}>See all</Text>
               </TouchableOpacity>
             )}
@@ -684,6 +767,9 @@ export function MyDayScreen() {
         </View>
         </View>
       </ScrollView>
+
+      <SpeedDialFab actions={fabActions} offset={92} />
+
       <AdBanner />
 
       <MilestoneCelebrationModal

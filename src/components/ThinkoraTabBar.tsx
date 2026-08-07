@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../context/ThemeContext';
+import { AD_BANNER_HEIGHT } from './AdBanner';
 import type { HomeTabParamList, RootStackParamList } from '../navigation/types';
 
 type StackNav = NativeStackNavigationProp<RootStackParamList>;
@@ -18,9 +19,6 @@ const TAB_ICONS: Record<keyof HomeTabParamList, { focused: string; default: stri
   Dashboard:{ focused: 'apps',          default: 'apps-outline',          label: 'More' },
 };
 
-/** Approximate height of the AdMob adaptive banner. Used to offset the
- *  floating tab bar so it sits above the ad rather than overlapping it. */
-const AD_BANNER_HEIGHT = 60;
 
 /**
  * Custom bottom tab bar — floating pill in Thinkora purple with a raised
@@ -37,24 +35,14 @@ export function ThinkoraTabBar({ state, navigation }: BottomTabBarProps) {
   const styles = useMemo(
     () =>
       StyleSheet.create({
-        // Solid backdrop sitting just behind the floating pill (between the
-        // screen content above and the ad banner below). Prevents the area
-        // around the bar from being see-through onto the screen content.
-        backdrop: {
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: insets.bottom + AD_BANNER_HEIGHT + 4,
-          height: 90, // bar height (~68) + breathing room
-          backgroundColor: theme.colors.surface,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: theme.colors.border,
-        },
+        // The bar is full-width and flush to the bottom, so it needs no
+        // separate backdrop behind it.
         wrap: {
           position: 'absolute',
           left: 0,
           right: 0,
-          bottom: insets.bottom + AD_BANNER_HEIGHT + 16,
+          // Sits directly on top of the system nav bar.
+          bottom: insets.bottom + AD_BANNER_HEIGHT,
           alignItems: 'center',
         },
         bar: {
@@ -62,12 +50,10 @@ export function ThinkoraTabBar({ state, navigation }: BottomTabBarProps) {
           alignItems: 'center',
           justifyContent: 'space-between',
           backgroundColor: theme.colors.primary,
-          borderRadius: 40,
           paddingHorizontal: 10,
           paddingVertical: 8,
           minHeight: 68,
-          width: '94%',
-          maxWidth: 460,
+          width: '100%',
           shadowColor: theme.colors.primary,
           shadowOpacity: 0.35,
           shadowOffset: { width: 0, height: 8 },
@@ -176,7 +162,6 @@ export function ThinkoraTabBar({ state, navigation }: BottomTabBarProps) {
 
   return (
     <>
-      <View style={styles.backdrop} pointerEvents="none" />
       <View style={styles.wrap} pointerEvents="box-none">
         <View style={styles.bar}>
           {state.routes.map((route, index) => {

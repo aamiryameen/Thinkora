@@ -378,6 +378,23 @@ export function SettingsScreen() {
           </View>
         </View>
 
+        {/* Archive & Trash */}
+        <View>
+          <Text style={styles.sectionTitle}>Storage</Text>
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={[styles.row, styles.rowLast]}
+              onPress={() => navigation.navigate('ArchiveTrash')}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: '#8B5CF620' }]}>
+                <Ionicons name="archive-outline" size={20} color="#8B5CF6" />
+              </View>
+              <Text style={styles.rowLabel}>Archive & Trash</Text>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textDisabled} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* AI */}
         <View>
           <Text style={styles.sectionTitle}>AI</Text>

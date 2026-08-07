@@ -14,6 +14,7 @@ import {
   EmailConfirmationRequired,
   type SyncUser,
 } from '../services/syncService';
+import { restoreBoards } from '../services/whiteboardService';
 
 type Screen = 'main' | 'login' | 'signup' | 'forgot';
 
@@ -153,7 +154,16 @@ export function CloudSyncScreen() {
                 taskCategories: payload.taskCategories,
                 settings: payload.settings,
               });
-              Alert.alert('Restore Complete', 'Your data has been restored from the cloud backup.');
+              // Boards live outside AppContext, so restore them separately.
+              let boardNote = '';
+              if (payload.boards?.length) {
+                const n = await restoreBoards(payload.boards, payload.boardItems ?? []);
+                boardNote = `\n${n} whiteboard${n === 1 ? '' : 's'} restored.`;
+              }
+              Alert.alert(
+                'Restore Complete',
+                `Your data has been restored from the cloud backup.${boardNote}`,
+              );
             } catch (e: any) {
               Alert.alert('Restore Failed', e.message);
             } finally {

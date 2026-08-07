@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Image,
   View,
   Text,
   StyleSheet,
@@ -27,6 +28,13 @@ import { estimateTaskDuration, formatMinutes, type TimeEstimate } from '../servi
 import { CategoryPicker } from '../components/CategoryPicker';
 import { ReminderTunePicker } from '../components/ReminderTunePicker';
 import { useApp } from '../context/AppContext';
+import { BackgroundPickerSheet } from '../components/BackgroundPickerSheet';
+import { FontPickerSheet } from '../components/FontPickerSheet';
+import { PremiumGateSheet } from '../components/PremiumGateSheet';
+import { usePremium } from '../services/premiumService';
+import { cssFontFamily, fontStyle } from '../core/fonts';
+import { moveToTrash } from '../services/archiveService';
+import { pickImageFromGallery, takePhoto } from '../services/attachmentService';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
 import type { TaskRepeat, TaskPriority } from '../types';
@@ -46,6 +54,17 @@ import {
   type ToneStyle,
   type AiCallResult,
 } from '../services/geminiService';
+import { stripHtml } from '../utils/stripHtml';
+
+const RichEditor = Platform.OS === 'android'
+  ? require('react-native-pell-rich-editor').RichEditor
+  : null;
+const RichToolbar = Platform.OS === 'android'
+  ? require('react-native-pell-rich-editor').RichToolbar
+  : null;
+const richActions = Platform.OS === 'android'
+  ? require('react-native-pell-rich-editor').actions
+  : { setBold: '', setItalic: '', setUnderline: '', insertBulletsList: '', insertOrderedList: '', checkboxList: '' };
 
 type EditorRouteProp = RouteProp<RootStackParamList, 'TaskEditor'>;
 type Nav = NativeStackNavigationProp<RootStackParamList, 'TaskEditor'>;
@@ -76,6 +95,7 @@ export function TaskEditorScreen() {
     addTask,
     updateTask,
     deleteTask,
+    reloadFromStorage,
     taskCategories,
     tasks,
     toggleSubTaskComplete,
@@ -93,7 +113,28 @@ export function TaskEditorScreen() {
   const [reminderDate, setReminderDate] = useState<number | null>(existing?.reminderDate ?? null);
   const [repeat, setRepeat] = useState<TaskRepeat>(existing?.repeat ?? 'none');
   const [priority, setPriority] = useState<TaskPriority>(existing?.priority ?? 'none');
+  const { hasPremium } = usePremium();
+  const [backgroundUri, setBackgroundUri] = useState<string | null>(existing?.backgroundUri ?? null);
+  const [fontId, setFontId] = useState<string>(existing?.fontId ?? 'default');
+  const [attachments, setAttachments] = useState(existing?.attachments ?? []);
+  const attachImage = useCallback(async (fromCamera: boolean) => {
+    try {
+      const picked = fromCamera ? await takePhoto() : await pickImageFromGallery();
+      if (!picked?.uri) return;
+      setAttachments(prev => [...prev, {
+        id: `att-${Date.now()}`,
+        type: fromCamera ? 'camera' : 'photo',
+        uri: picked.uri,
+        createdAt: Date.now(),
+      }]);
+    } catch { /* cancelled */ }
+  }, []);
+
+  const [bgPickerVisible, setBgPickerVisible] = useState(false);
+  const [fontPickerVisible, setFontPickerVisible] = useState(false);
+  const [fontGateVisible, setFontGateVisible] = useState(false);
   const [notes, setNotes] = useState(existing?.notes ?? '');
+  const notesRichRef = useRef<any>(null);
   const [subtasks, setSubtasks] = useState(existing?.subtasks ?? []);
   const [timeEstimate, setTimeEstimate] = useState<TimeEstimate | null>(null);
   const [tuneId, setTuneIdState] = useState<string | null>(null);
@@ -212,7 +253,11 @@ export function TaskEditorScreen() {
           if (voiceTargetRef.current === 'title') {
             setTitle((prev: string) => prev ? `${prev} ${text}` : text);
           } else if (voiceTargetRef.current === 'notes') {
-            setNotes((prev: string) => prev ? `${prev} ${text}` : text);
+            if (Platform.OS === 'android' && notesRichRef.current) {
+              notesRichRef.current.insertText(text);
+            } else {
+              setNotes((prev: string) => prev ? `${prev} ${text}` : text);
+            }
           }
         }
         voiceTargetRef.current = null;
@@ -244,9 +289,11 @@ export function TaskEditorScreen() {
         reminderDate,
         repeat,
         notes,
-        attachments: [],
+        attachments,
         subtasks,
         priority,
+        backgroundUri,
+        fontId,
       });
       savedId = created.id;
     } else if (existing) {
@@ -259,6 +306,9 @@ export function TaskEditorScreen() {
         notes,
         subtasks,
         priority,
+        attachments,
+        backgroundUri,
+        fontId,
       });
       savedId = existing.id;
     }
@@ -274,13 +324,54 @@ export function TaskEditorScreen() {
     navigation.goBack();
   }, [isNew, title, categoryId, dueDate, reminderDate, repeat, notes, subtasks, priority, existing, addTask, updateTask, navigation, tuneId]);
 
+  /**
+   * Pushes the chosen font into the notes WebView.
+   *
+   * `contentCSSText` is only read when the editor initialises, and the text
+   * lives in a contenteditable div rather than `document.body` — so the rule
+   * has to be injected as a stylesheet covering both.
+   */
+  useEffect(() => {
+    const family = cssFontFamily(fontId);
+    const css = `body, #editor, .content, [contenteditable] { font-family: ${family} !important; }`;
+    const script = `
+      (function() {
+        var id = 'thinkora-font';
+        var tag = document.getElementById(id);
+        if (!tag) {
+          tag = document.createElement('style');
+          tag.id = id;
+          document.head.appendChild(tag);
+        }
+        tag.innerHTML = ${JSON.stringify(css)};
+      })();
+      true;
+    `;
+    const apply = () => {
+      try { notesRichRef.current?.injectJavascript?.(script); } catch { /* not ready */ }
+    };
+    apply();
+    // The WebView bridge can mount a frame or two after this effect runs.
+    const retry = setTimeout(apply, 150);
+    return () => clearTimeout(retry);
+  }, [fontId]);
+
   const handleDelete = useCallback(() => {
     if (!taskId) return;
-    Alert.alert('Delete task', 'Are you sure?', [
+    // Trash rather than destroy, matching the task list's long-press action.
+    Alert.alert('Move to trash', 'You can restore it from Settings for 30 days.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => { deleteTask(taskId); navigation.goBack(); } },
+      {
+        text: 'Move to trash',
+        style: 'destructive',
+        onPress: async () => {
+          await moveToTrash('task', taskId);
+          await reloadFromStorage();
+          navigation.goBack();
+        },
+      },
     ]);
-  }, [taskId, deleteTask, navigation]);
+  }, [navigation, reloadFromStorage, taskId]);
 
   // Refs hold all picker state so callbacks are never stale and no effects needed
   const activePickerType = useRef<'due' | 'reminder'>('due');
@@ -375,7 +466,7 @@ export function TaskEditorScreen() {
   // ─── AI: text actions (summarize / rewrite / grammar / tone) ───
   const runTextAiAction = useCallback(
     async (label: string, fn: (signal: AbortSignal) => Promise<AiCallResult>) => {
-      const text = notes.trim();
+      const text = stripHtml(notes).trim();
       if (!text) {
         Alert.alert('Nothing to process', 'Add some text in Notes first.');
         return;
@@ -426,15 +517,21 @@ export function TaskEditorScreen() {
   const applyTextAiResult = useCallback(
     (mode: 'replace' | 'append') => {
       if (!aiActionResult) return;
-      setNotes((prev) => (mode === 'replace' ? aiActionResult : prev + (prev ? '\n\n' : '') + aiActionResult));
+      const resultHtml = aiActionResult.replace(/\n/g, '<br/>');
+      const next = mode === 'replace' ? resultHtml : notes + (notes ? '<br/><br/>' : '') + resultHtml;
+      setNotes(next);
+      if (Platform.OS === 'android' && notesRichRef.current) {
+        notesRichRef.current.setContentHTML(next);
+      }
       closeTextAiModal();
     },
-    [aiActionResult, closeTextAiModal],
+    [aiActionResult, notes, closeTextAiModal],
   );
 
   // ─── AI: subtasks suggester ───
   const runSuggestSubtasks = useCallback(async () => {
-    const descriptor = `${title.trim()}${notes.trim() ? `\n\n${notes.trim()}` : ''}`.trim();
+    const plainNotes = stripHtml(notes).trim();
+    const descriptor = `${title.trim()}${plainNotes ? `\n\n${plainNotes}` : ''}`.trim();
     if (descriptor.length < 3) {
       Alert.alert('Need more context', 'Add a task title (and optionally notes) first so the AI has something to break down.');
       return;
@@ -498,7 +595,7 @@ export function TaskEditorScreen() {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: insets.top + theme.spacing.sm,
       paddingBottom: theme.spacing.md,
-      backgroundColor: theme.colors.surface,
+      backgroundColor: backgroundUri ? 'transparent' : theme.colors.surface,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: theme.colors.border,
     },
@@ -526,7 +623,7 @@ export function TaskEditorScreen() {
       ...theme.typography.button,
       color: '#FFF',
     },
-    scroll: { flex: 1 },
+    scroll: { flex: 1, backgroundColor: 'transparent' },
     scrollContent: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.lg,
@@ -535,9 +632,40 @@ export function TaskEditorScreen() {
     },
 
     // Title card
-    titleCard: {
+    attachCard: {
       backgroundColor: theme.colors.cardBg,
       borderRadius: theme.borderRadius.xl,
+      padding: theme.spacing.md,
+      marginTop: theme.spacing.md,
+      gap: theme.spacing.sm,
+    },
+    attachHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+    attachLabel: {
+      ...theme.typography.caption, fontWeight: '700',
+      color: theme.colors.textMuted, flex: 1,
+      textTransform: 'uppercase', letterSpacing: 1,
+    },
+    attachBtn: {
+      width: 32, height: 32, borderRadius: 10,
+      alignItems: 'center', justifyContent: 'center',
+      backgroundColor: theme.colors.primaryLight,
+    },
+    attachRow: { flexDirection: 'row', gap: theme.spacing.sm },
+    attachThumb: {
+      width: 72, height: 72, borderRadius: 12,
+      overflow: 'hidden', backgroundColor: theme.colors.inputBg,
+    },
+    attachRemove: {
+      position: 'absolute', top: 3, right: 3,
+      width: 18, height: 18, borderRadius: 9,
+      alignItems: 'center', justifyContent: 'center',
+      backgroundColor: '#000000AA',
+    },
+    titleCard: {
+      backgroundColor: backgroundUri ? theme.colors.surface + 'B8' : theme.colors.cardBg,
+      borderRadius: theme.borderRadius.xl,
+      // Clips the background image to the card's rounded corners.
+      overflow: 'hidden',
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.lg,
       paddingBottom: theme.spacing.md,
@@ -702,7 +830,9 @@ export function TaskEditorScreen() {
 
     // Notes card with focus styling
     notesCard: {
-      backgroundColor: theme.colors.cardBg,
+      // Translucent when a background image is set, so the image reads through
+      // instead of being hidden by an opaque card.
+      backgroundColor: backgroundUri ? theme.colors.surface + 'B8' : theme.colors.cardBg,
       borderRadius: theme.borderRadius.xl,
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.md,
@@ -712,8 +842,32 @@ export function TaskEditorScreen() {
     notesHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      justifyContent: 'flex-end',
       marginBottom: theme.spacing.xs,
+    },
+    /* Formatting dock — mirrors the create-note editor toolbar */
+    notesDockRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      marginBottom: theme.spacing.xs,
+      padding: 4,
+      backgroundColor: theme.colors.surfaceMuted,
+      borderRadius: theme.borderRadius.full,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.colors.borderSubtle,
+    },
+    notesDock: {
+      flex: 1,
+      minHeight: 40,
+      paddingHorizontal: 4,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    notesDockToolbar: {
+      backgroundColor: 'transparent',
+      minHeight: 36,
+      flex: 1,
     },
     notesMicBtn: {
       width: 30,
@@ -984,15 +1138,46 @@ export function TaskEditorScreen() {
     suggestionCheckboxOn: { backgroundColor: theme.colors.primary },
     suggestionText: { ...theme.typography.body, color: theme.colors.text, flex: 1 },
     suggestionTextDim: { color: theme.colors.textMuted, textDecorationLine: 'line-through' },
-  }), [theme, insets]);
+  }), [backgroundUri, theme, insets]);
 
   return (
     <View style={styles.container}>
+      {/* Page background sits behind everything, not just the title card. */}
+      {backgroundUri && (
+        <>
+          <Image
+            source={{ uri: backgroundUri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+          {/* Scrim keeps text legible over an arbitrary photo. */}
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: theme.colors.background + 'C4' },
+            ]}
+          />
+        </>
+      )}
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()} activeOpacity={0.7}>
           <Icon name="back" size={22} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{isNew ? 'New task' : 'Edit task'}</Text>
+        <TouchableOpacity style={styles.headerBtn} onPress={() => setBgPickerVisible(true)} activeOpacity={0.7}>
+          <Ionicons
+            name={backgroundUri ? 'image' : 'image-outline'}
+            size={20}
+            color={backgroundUri ? theme.colors.primary : theme.colors.icon}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.headerBtn} onPress={() => setFontPickerVisible(true)} activeOpacity={0.7}>
+          <Ionicons
+            name="text"
+            size={20}
+            color={fontId !== 'default' ? theme.colors.primary : theme.colors.icon}
+          />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
           <Text style={styles.saveBtnText}>Save</Text>
         </TouchableOpacity>
@@ -1003,10 +1188,10 @@ export function TaskEditorScreen() {
         <View style={styles.titleCard}>
           <View style={styles.titleRow}>
             <TextInput
-              style={styles.titleInput}
+              style={[styles.titleInput, fontStyle(fontId)]}
               value={title}
               onChangeText={setTitle}
-              placeholder="What do you need to do?"
+              placeholder="Task here"
               placeholderTextColor={theme.colors.textMuted}
               autoFocus={isNew}
               multiline
@@ -1025,6 +1210,126 @@ export function TaskEditorScreen() {
                 color={isListening && voiceTarget === 'title' ? '#FFF' : theme.colors.textSecondary}
               />
             </Pressable>
+          </View>
+        </View>
+
+        {/* Attachments */}
+        <View style={styles.attachCard}>
+          <View style={styles.attachHeader}>
+            <Text style={styles.attachLabel}>Attachments</Text>
+            <TouchableOpacity onPress={() => attachImage(false)} style={styles.attachBtn}>
+              <Ionicons name="image-outline" size={17} color={theme.colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => attachImage(true)} style={styles.attachBtn}>
+              <Ionicons name="camera-outline" size={17} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+          {attachments.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.attachRow}>
+                {attachments.map(a => (
+                  <View key={a.id} style={styles.attachThumb}>
+                    <Image source={{ uri: a.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                    <TouchableOpacity
+                      style={styles.attachRemove}
+                      onPress={() => setAttachments(prev => prev.filter(x => x.id !== a.id))}
+                    >
+                      <Ionicons name="close" size={12} color="#FFF" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+        </View>
+
+        {/* Notes — right below the title, with the same formatting dock as create-note */}
+        <View style={styles.section}>
+          <View style={styles.sectionTitleRow}>
+            <View style={styles.sectionTitleIcon}>
+              <Ionicons name="document-text-outline" size={14} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.sectionTitle}>Notes</Text>
+          </View>
+          <View style={styles.notesCard}>
+            {Platform.OS === 'android' && RichEditor && RichToolbar ? (
+              <>
+                <View style={styles.notesDockRow}>
+                  <View style={styles.notesDock}>
+                    <RichToolbar
+                      getEditor={() => notesRichRef.current}
+                      actions={[
+                        richActions.setBold,
+                        richActions.setItalic,
+                        richActions.setUnderline,
+                        richActions.insertBulletsList,
+                        richActions.insertOrderedList,
+                        richActions.checkboxList,
+                      ]}
+                      style={styles.notesDockToolbar}
+                      iconTint={theme.colors.textSecondary}
+                      selectedIconTint={theme.colors.primary}
+                    />
+                  </View>
+                  <Pressable
+                    onPress={() => isListening && voiceTarget === 'notes' ? stopVoice() : startVoice('notes')}
+                    hitSlop={12}
+                    style={[
+                      styles.notesMicBtn,
+                      isListening && voiceTarget === 'notes' && styles.notesMicBtnActive,
+                    ]}
+                  >
+                    <Ionicons
+                      name={isListening && voiceTarget === 'notes' ? 'stop' : 'mic-outline'}
+                      size={15}
+                      color={isListening && voiceTarget === 'notes' ? '#FFF' : theme.colors.textSecondary}
+                    />
+                  </Pressable>
+                </View>
+                <RichEditor
+                  ref={(r: any) => { if (r) notesRichRef.current = r; }}
+                  initialContentHTML={notes}
+                  onChange={(html: string) => setNotes(typeof html === 'string' ? html : '')}
+                  placeholder="Add details, context, links…"
+                  initialHeight={120}
+                  editorStyle={{
+                    backgroundColor: 'transparent',
+                    color: theme.colors.text,
+                    placeholderColor: theme.colors.textSecondary,
+                    caretColor: theme.colors.primary,
+                    contentCSSText: `font-size: 15px; line-height: 1.6; min-height: 96px; padding: 4px 2px; font-family: ${cssFontFamily(fontId)};`,
+                  }}
+                  useContainer={true}
+                />
+              </>
+            ) : (
+              <>
+                <View style={styles.notesHeader}>
+                  <Pressable
+                    onPress={() => isListening && voiceTarget === 'notes' ? stopVoice() : startVoice('notes')}
+                    hitSlop={12}
+                    style={[
+                      styles.notesMicBtn,
+                      isListening && voiceTarget === 'notes' && styles.notesMicBtnActive,
+                    ]}
+                  >
+                    <Ionicons
+                      name={isListening && voiceTarget === 'notes' ? 'stop' : 'mic-outline'}
+                      size={15}
+                      color={isListening && voiceTarget === 'notes' ? '#FFF' : theme.colors.textSecondary}
+                    />
+                  </Pressable>
+                </View>
+                <TextInput
+                  style={[styles.notesInput, fontStyle(fontId)]}
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Add details, context, links…"
+                  placeholderTextColor={theme.colors.textMuted}
+                  multiline
+                />
+              </>
+            )}
           </View>
         </View>
 
@@ -1178,45 +1483,6 @@ export function TaskEditorScreen() {
                 </TouchableOpacity>
               );
             })}
-          </View>
-        </View>
-
-        {/* Notes */}
-        <View style={styles.section}>
-          <View style={styles.sectionTitleRow}>
-            <View style={styles.sectionTitleIcon}>
-              <Ionicons name="document-text-outline" size={14} color={theme.colors.primary} />
-            </View>
-            <Text style={styles.sectionTitle}>Notes</Text>
-          </View>
-          <View style={styles.notesCard}>
-            <View style={styles.notesHeader}>
-              <Text style={[styles.chipText, { color: theme.colors.textMuted }]}>
-                {notes.length > 0 ? `${notes.length} chars` : 'Optional'}
-              </Text>
-              <Pressable
-                onPress={() => isListening && voiceTarget === 'notes' ? stopVoice() : startVoice('notes')}
-                hitSlop={12}
-                style={[
-                  styles.notesMicBtn,
-                  isListening && voiceTarget === 'notes' && styles.notesMicBtnActive,
-                ]}
-              >
-                <Ionicons
-                  name={isListening && voiceTarget === 'notes' ? 'stop' : 'mic-outline'}
-                  size={15}
-                  color={isListening && voiceTarget === 'notes' ? '#FFF' : theme.colors.textSecondary}
-                />
-              </Pressable>
-            </View>
-            <TextInput
-              style={styles.notesInput}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Add details, context, links…"
-              placeholderTextColor={theme.colors.textMuted}
-              multiline
-            />
           </View>
         </View>
 
@@ -1568,6 +1834,27 @@ export function TaskEditorScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <BackgroundPickerSheet
+        visible={bgPickerVisible}
+        currentUri={backgroundUri}
+        onSelect={(uri) => { setBackgroundUri(uri); setBgPickerVisible(false); }}
+        onClose={() => setBgPickerVisible(false)}
+      />
+      <FontPickerSheet
+        visible={fontPickerVisible}
+        currentId={fontId}
+        sample={title.trim().slice(0, 12) || 'Thinkora'}
+        hasPremium={hasPremium}
+        onSelect={(id) => { setFontId(id); setFontPickerVisible(false); }}
+        onLocked={() => { setFontPickerVisible(false); setFontGateVisible(true); }}
+        onClose={() => setFontPickerVisible(false)}
+      />
+      <PremiumGateSheet
+        visible={fontGateVisible}
+        feature="note_fonts"
+        onClose={() => setFontGateVisible(false)}
+      />
     </View>
   );
 }

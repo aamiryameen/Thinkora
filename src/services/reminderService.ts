@@ -126,7 +126,6 @@ export async function createNotificationChannel(): Promise<void> {
   }
 
   channelsCreated = true;
-  if (__DEV__) console.log('[Notifications] Channels created (', CHANNEL_VERSION, ')');
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
@@ -165,10 +164,8 @@ function getRepeatFrequency(repeat: ReminderRepeat): number | undefined {
 
 export async function scheduleTimeReminder(reminder: Reminder): Promise<string | null> {
   if (Platform.OS !== 'android' || !notifee || !reminder.date) {
-    if (__DEV__) console.log('[Reminder] Skipped:', !notifee ? 'no notifee' : !reminder.date ? 'no date' : 'not android');
     return null;
   }
-  if (__DEV__) console.log('[Reminder] Scheduling:', reminder.id, 'at', new Date(reminder.date).toLocaleTimeString());
   await createNotificationChannel();
   const repeatFreq = getRepeatFrequency(reminder.repeat);
   const trigger: { type: number; timestamp: number; alarmManager?: boolean; repeatFrequency?: number } = {
@@ -185,7 +182,6 @@ export async function scheduleTimeReminder(reminder: Reminder): Promise<string |
     await ensureCustomChannel(tune.id, tune.resource);
   }
   const channelId = channelIdForTune(tune.id);
-  if (__DEV__) console.log('[Reminder] Using channel:', channelId, 'sound:', tune.resource);
   const id = await notifee.createTriggerNotification(
     {
       id: reminder.id,
@@ -286,12 +282,46 @@ export async function fireTestNotification(title: string, body: string): Promise
 /** Register background notification event handler for snooze actions + deep linking */
 export function registerNotificationHandlers(): void {
   if (Platform.OS !== 'android' || !notifee) return;
-  notifee.onBackgroundEvent(async ({ type, detail }) => {
+  notifee.onBackgroundEvent(async ({ type, detail }: { type: number; detail: any }) => {
     const EventType = require('@notifee/react-native').EventType;
     if (type === EventType.ACTION_PRESS) {
       const actionId = detail.pressAction?.id;
       if (actionId === 'dismiss' && detail.notification?.id) {
         await notifee!.cancelNotification(detail.notification.id);
+        return;
+      }
+      // Medicine reminders carry Taken / Snooze buttons. Handled here rather
+      // than in medicineService because notifee allows only one background
+      // event handler for the whole app.
+      if (actionId === 'taken' || actionId === 'snooze') {
+        const data = detail.notification?.data ?? {};
+        if (data.type === 'medicine-dose' && data.medicineId && data.date) {
+          const med = require('./medicineService');
+          const minutes = data.minutes ? Number(data.minutes) : null;
+          const profileId = String(data.profileId ?? '');
+          try {
+            if (actionId === 'taken') {
+              await med.logDose({
+                medicineId: String(data.medicineId),
+                profileId,
+                date: String(data.date),
+                scheduledMinutes: Number.isFinite(minutes) ? minutes : null,
+                status: 'taken',
+              });
+            } else {
+              await med.snoozeDose({
+                medicineId: String(data.medicineId),
+                profileId,
+                date: String(data.date),
+                scheduledMinutes: Number.isFinite(minutes) ? minutes : null,
+                minutes: 10,
+              });
+            }
+          } catch { /* the user can still act inside the app */ }
+        }
+        if (detail.notification?.id) {
+          await notifee!.cancelNotification(detail.notification.id);
+        }
         return;
       }
       // Deep link on default press action (notification body tap)

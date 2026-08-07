@@ -16,6 +16,10 @@ export class TaskModel extends Model {
   @text('subtasks') subtasksRaw!: string;
   @text('priority') priority!: string;
   @field('my_day') myDay!: boolean;
+  @field('background_uri') backgroundUri!: string | null;
+  @field('font_id') fontId!: string | null;
+  @field('archived') archived!: boolean;
+  @field('trashed_at') trashedAt!: number | null;
   @field('created_at') createdAt!: number;
   @field('updated_at') updatedAt!: number;
 
@@ -40,6 +44,10 @@ export class TaskModel extends Model {
       attachments: this.attachments,
       subtasks: this.subtasks,
       priority: this.priority as TaskPriority,
+      backgroundUri: this.backgroundUri ?? null,
+      fontId: this.fontId ?? null,
+      archived: !!this.archived,
+      trashedAt: this.trashedAt ?? null,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };

@@ -13,9 +13,11 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '../components/Icons';
 import { TaskCard } from '../components/TaskCard';
-import { AdBanner } from '../components/AdBanner';
+import { AdBanner, AD_BANNER_HEIGHT, SCREEN_BOTTOM_INSET } from '../components/AdBanner';
+import { RippleFab } from '../components/RippleFab';
 import { CategoryPicker } from '../components/CategoryPicker';
 import { useApp } from '../context/AppContext';
+import { moveToTrash, setArchived } from '../services/archiveService';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
 import type { Task } from '../types';
@@ -49,6 +51,7 @@ export function TaskListScreen() {
     deleteTask,
     deleteAllTasks,
     getTaskCategory,
+    reloadFromStorage,
   } = useApp();
 
   const [search, setSearch] = useState('');
@@ -78,16 +81,24 @@ export function TaskListScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: task.completed ? 'Mark Incomplete' : 'Mark Complete', onPress: () => handleToggleComplete(task) },
       {
-        text: 'Delete',
+        text: 'Archive',
+        onPress: async () => {
+          await setArchived('task', task.id, true);
+          await reloadFromStorage();
+        },
+      },
+      {
+        // Trash, not delete: recoverable for 30 days from
+        // Settings → Archive & Trash.
+        text: 'Move to trash',
         style: 'destructive',
-        onPress: () =>
-          Alert.alert('Delete task?', 'This cannot be undone.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: () => deleteTask(task.id) },
-          ]),
+        onPress: async () => {
+          await moveToTrash('task', task.id);
+          await reloadFromStorage();
+        },
       },
     ]);
-  }, [handleToggleComplete, deleteTask]);
+  }, [handleToggleComplete, reloadFromStorage]);
 
   const handleDeleteAllTasks = useCallback(() => {
     if (tasks.length === 0) return;
@@ -207,7 +218,7 @@ export function TaskListScreen() {
     list: {
       paddingHorizontal: theme.spacing.lg,
       paddingTop: theme.spacing.md,
-      paddingBottom: 180,
+      paddingBottom: SCREEN_BOTTOM_INSET,
     },
     sectionHeader: {
       ...theme.typography.label,
@@ -242,7 +253,7 @@ export function TaskListScreen() {
     fab: {
       position: 'absolute',
       // Position above the floating tab bar (~76dp) + ad banner (~60dp) + insets.
-      bottom: insets.bottom + theme.spacing.xl + 60 + 76,
+      bottom: insets.bottom + theme.spacing.xl + AD_BANNER_HEIGHT + 76,
       right: theme.spacing.lg,
       width: 56,
       height: 56,
@@ -355,13 +366,16 @@ export function TaskListScreen() {
         />
       )}
 
-      <TouchableOpacity
-        style={styles.fab}
+      <RippleFab
+        icon="add"
         onPress={() => navigation.navigate('TaskEditor', {})}
-        activeOpacity={0.8}
-      >
-        <Icon name="add" size={28} color="#FFF" />
-      </TouchableOpacity>
+        accessibilityLabel="New task"
+        position={{
+          right: theme.spacing.xl,
+          bottom: insets.bottom + theme.spacing.xl + AD_BANNER_HEIGHT + 76,
+        }}
+        iconSize={28}
+      />
       <AdBanner />
     </View>
   );

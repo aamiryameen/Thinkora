@@ -10,6 +10,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useApp } from '../context/AppContext';
 import { useTheme } from '../context/ThemeContext';
 import type { RootStackParamList } from '../navigation/types';
+import { stripHtml } from '../utils/stripHtml';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -54,12 +55,13 @@ export function SearchScreen() {
 
     if (activeFilter !== 'notes') {
       for (const t of tasks) {
-        if (t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q)) {
+        const plainNotes = stripHtml(t.notes || '');
+        if (t.title.toLowerCase().includes(q) || plainNotes.toLowerCase().includes(q)) {
           out.push({
             id: t.id,
             type: 'task',
             title: t.title,
-            preview: t.notes?.slice(0, 100) || '',
+            preview: plainNotes.slice(0, 100),
             meta: t.dueDate ? new Date(t.dueDate).toLocaleDateString() : (t.completed ? 'Completed' : 'No due date'),
             color: null,
           });

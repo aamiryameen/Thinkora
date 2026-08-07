@@ -24,6 +24,13 @@ export interface Note {
   category: SmartCategory;
   attachments: NoteAttachment[];
   reminderId: string | null;
+  /** Local uri of a background image behind the note content. */
+  backgroundUri?: string | null;
+  /** Font id from core/fonts; null uses the app default. */
+  fontId?: string | null;
+  archived?: boolean;
+  /** Epoch ms when moved to trash; null when not trashed. */
+  trashedAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -35,6 +42,10 @@ export interface Folder {
   parentId: string | null;
   order: number;
   createdAt: number;
+  /** Cover colour (hex). Null falls back to a palette colour by index. */
+  color?: string | null;
+  /** Cover icon (Ionicons name). Null falls back to a generic book icon. */
+  icon?: string | null;
 }
 
 // Tags (nested via parentId)
@@ -129,6 +140,13 @@ export interface Task {
   attachments: NoteAttachment[];
   subtasks: SubTask[];
   priority: TaskPriority;
+  /** Local uri of a background image behind the task detail. */
+  backgroundUri?: string | null;
+  /** Font id from core/fonts; null uses the app default. */
+  fontId?: string | null;
+  archived?: boolean;
+  /** Epoch ms when moved to trash; null when not trashed. */
+  trashedAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }

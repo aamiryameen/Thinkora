@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { fontStyle } from '../core/fonts';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useTheme } from '../context/ThemeContext';
 import type { Task, TaskCategory } from '../types';
@@ -127,7 +128,10 @@ function TaskCardImpl({ task, category, onToggle, onPress, onLongPress, palette 
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <Text style={[styles.title, task.completed && styles.titleDone]} numberOfLines={2}>
+        <Text
+          style={[styles.title, task.completed && styles.titleDone, fontStyle(task.fontId)]}
+          numberOfLines={2}
+        >
           {task.title}
         </Text>
 

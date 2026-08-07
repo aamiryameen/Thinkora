@@ -78,3 +78,10 @@ yarn-error.log
 .env
 .env.local
 .env.*.local
+
+# Google Play service-account credentials. These authorize access to Play
+# financial data and subscription management — they belong in the RevenueCat
+# dashboard, never in the repo.
+*service-account*.json
+*play-credentials*.json
+google-play-*.json

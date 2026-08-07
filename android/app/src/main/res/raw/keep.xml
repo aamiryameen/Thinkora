@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Raw sounds are loaded dynamically by name (react-native-sound / notifee
+  via Resources.getIdentifier), so the resource shrinker sees no references
+  and would strip them from release builds. Keep them all explicitly.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/*" />

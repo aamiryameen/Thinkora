@@ -2,8 +2,12 @@
  * Typed navigation params for type-safe screen navigation.
  */
 
+import type { NavigatorScreenParams } from '@react-navigation/native';
+
 export type RootStackParamList = {
-  Home: undefined;
+  /** Hosts the bottom-tab navigator; use `navigate('Home', { screen: 'Tasks' })`
+   *  to target a specific tab from a screen outside the tab navigator. */
+  Home: NavigatorScreenParams<HomeTabParamList>;
   NoteEditor: NoteEditorParams;
   TaskEditor: TaskEditorParams;
   HabitTracker: undefined;
@@ -18,6 +22,21 @@ export type RootStackParamList = {
   CategoryManager: undefined;
   Reports: undefined;
   Settings: undefined;
+  Notebooks: undefined;
+  Budget: undefined;
+  BudgetCategories: undefined;
+  BudgetLimits: undefined;
+  BudgetRecurring: undefined;
+  BudgetReports: undefined;
+  Medicine: undefined;
+  MedicineHistory: undefined;
+  MedicineProfiles: undefined;
+  DoctorVisits: undefined;
+  MedicineInventory: undefined;
+  MedicineAnalytics: undefined;
+  Whiteboards: undefined;
+  Whiteboard: { boardId: string };
+  ArchiveTrash: undefined;
   AISettings: undefined;
   Scan: undefined;
   Quotes: undefined;
@@ -41,6 +60,32 @@ export type RootStackParamList = {
   TodayCard: undefined;
   MorningBrew: undefined;
   VoiceCapture: undefined;
+  KnowledgeBases: undefined;
+  KnowledgeBaseDetail: { kbId: string };
+  KbChat: KbChatParams;
+  KbDocument: KbDocumentParams;
+  KbSearch: { kbId: string };
+  WeatherDetail: undefined;
+  // ── Daily Planner ──
+  DailyPlanner: undefined;
+  MorningPlanning: undefined;
+  WeeklyPlanner: undefined;
+  PlannerTemplates: undefined;
+  PlannerAnalytics: undefined;
+  PlannerSettings: undefined;
+};
+
+export type KbChatParams = {
+  kbId: string;
+  /** When set, the conversation is scoped to a single document. */
+  documentId?: string;
+};
+
+export type KbDocumentParams = {
+  kbId: string;
+  documentId: string;
+  /** Chunk to scroll to when arriving from a citation. */
+  highlightChunkId?: string;
 };
 
 export type NoteEditorParams = {

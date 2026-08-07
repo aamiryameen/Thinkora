@@ -9,10 +9,12 @@ import {
   Platform,
   ActivityIndicator,
   Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { EDITOR_CONTENT_DEBOUNCE_MS } from '../core/constants';
 import { useTheme } from '../context/ThemeContext';
+import { cssFontFamily, fontStyle } from '../core/fonts';
 import { stripHtml } from '../utils/stripHtml';
 
 const RichEditor = Platform.OS === 'android'
@@ -35,6 +37,8 @@ interface RichNoteEditorProps {
   onTitleChange: (title: string) => void;
   onContentChange: (content: string, plainText: string) => void;
   placeholder?: string;
+  /** Font id from core/fonts, applied to title and body. */
+  fontId?: string | null;
   editable?: boolean;
   contentRestoreKey?: number;
   titleVoiceActive?: boolean;
@@ -64,7 +68,8 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
   content,
   onTitleChange,
   onContentChange,
-  placeholder = 'Begin your story…',
+  placeholder = 'Note here',
+  fontId,
   editable = true,
   contentRestoreKey = 0,
   titleVoiceActive = false,
@@ -73,11 +78,56 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
   onContentVoicePress,
 }: RichNoteEditorProps, ref) {
   const { theme } = useTheme();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  // Writing area floor scales with the device: ~26% of the window height,
+  // clamped so it never collapses on small phones nor balloons on tablets.
+  const editorMinHeight = Math.round(Math.min(Math.max(windowHeight * 0.26, 160), 340));
+  const isNarrow = windowWidth < 360;
   const richRef = useRef<{
     setContentHTML: (html: string) => void;
     getContentHtml: () => Promise<string>;
+    injectJavascript?: (script: string) => void;
   } | null>(null);
   const [editorReady, setEditorReady] = useState(false);
+
+  /**
+   * Re-applies the font to the editor's editable area.
+   *
+   * Two reasons this needs injection rather than props:
+   *  - `editorStyle.contentCSSText` is only read once, at WebView init, so it
+   *    can't change the font on an already-open note.
+   *  - the library's own `setContentStyle` only understands background, text
+   *    and placeholder colour — it ignores font-family.
+   *
+   * The text lives in the contenteditable div, not `document.body`, so the rule
+   * is written as a stylesheet covering both.
+   */
+  useEffect(() => {
+    if (!editorReady) return;
+    const family = cssFontFamily(fontId);
+    const css = `body, #editor, .content, [contenteditable] { font-family: ${family} !important; }`;
+    const script = `
+      (function() {
+        var id = 'thinkora-font';
+        var tag = document.getElementById(id);
+        if (!tag) {
+          tag = document.createElement('style');
+          tag.id = id;
+          document.head.appendChild(tag);
+        }
+        tag.innerHTML = ${JSON.stringify(css)};
+      })();
+      true;
+    `;
+
+    // The WebView bridge can lag a frame behind `editorReady`, so retry once.
+    const apply = () => {
+      try { richRef.current?.injectJavascript?.(script); } catch { /* not ready */ }
+    };
+    apply();
+    const retry = setTimeout(apply, 120);
+    return () => clearTimeout(retry);
+  }, [editorReady, fontId]);
   const contentChangeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shimmer = useShimmerLoop();
 
@@ -187,8 +237,8 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         },
         titleInput: {
           flex: 1,
-          fontSize: 28,
-          lineHeight: 34,
+          fontSize: isNarrow ? 24 : 28,
+          lineHeight: isNarrow ? 30 : 34,
           fontWeight: '800',
           letterSpacing: -0.6,
           paddingVertical: 6,
@@ -308,28 +358,27 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
           borderColor: theme.colors.error,
         },
 
-        /* Editor body — needs an explicit height (not just minHeight)
-           because the parent ScrollView lets the WebView collapse to its
-           content size otherwise. */
+        /* Editor body — the pell editor sizes its container from the WebView
+           content height (floored by the initialHeight prop), so no fixed
+           height here; it must stay free to grow with the note. */
         editor: {
-          height: 720,
           paddingHorizontal: theme.spacing.md,
           paddingTop: theme.spacing.xs,
         },
         fallbackBody: {
-          height: 720,
-          fontSize: 16,
+          minHeight: editorMinHeight,
+          fontSize: 17,
           color: theme.colors.text,
           paddingVertical: theme.spacing.sm,
           paddingHorizontal: theme.spacing.lg,
           textAlignVertical: 'top',
-          lineHeight: 26,
+          lineHeight: 28,
         },
         loading: {
           position: 'absolute',
           left: 0,
           right: 0,
-          top: 220,
+          top: Math.round(windowHeight * 0.3),
           alignItems: 'center',
         },
 
@@ -350,7 +399,7 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
           borderColor: theme.colors.error,
         },
       }),
-    [theme]
+    [theme, editorMinHeight, isNarrow, windowHeight]
   );
 
   /** Minimal header — just a tiny live "auto-saved" status + the date. */
@@ -449,7 +498,7 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         <View style={styles.titleSection}>
           <View style={styles.titleRow}>
             <TextInput
-              style={styles.titleInput}
+              style={[styles.titleInput, fontStyle(fontId)]}
               value={title}
               onChangeText={onTitleChange}
               placeholder="Title"
@@ -464,13 +513,13 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         </View>
         <Separator />
         <TextInput
-          style={styles.fallbackBody}
+          style={[styles.fallbackBody, fontStyle(fontId)]}
           value={content ? stripHtml(content) : ''}
           onChangeText={(text) => onContentChange(text, text)}
           placeholder={placeholder}
           multiline
           editable={editable}
-          placeholderTextColor={theme.colors.textDisabled}
+          placeholderTextColor={theme.colors.textSecondary}
         />
       </View>
     );
@@ -482,7 +531,7 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
       <View style={styles.titleSection}>
         <View style={styles.titleRow}>
           <TextInput
-            style={styles.titleInput}
+            style={[styles.titleInput, fontStyle(fontId)]}
             value={title}
             onChangeText={onTitleChange}
             placeholder="Title"
@@ -512,12 +561,13 @@ export const RichNoteEditor = forwardRef<RichNoteEditorHandle, RichNoteEditorPro
         onBlur={flushContent}
         placeholder={placeholder}
         style={styles.editor}
+        initialHeight={editorMinHeight}
         editorStyle={{
           backgroundColor: 'transparent',
-          minHeight: 680,
           color: theme.colors.text,
-          placeholderColor: theme.colors.textMuted,
+          placeholderColor: theme.colors.textSecondary,
           caretColor: theme.colors.primary,
+          contentCSSText: `font-size: 17px; line-height: 1.7; padding-top: 8px; min-height: ${editorMinHeight - 30}px; font-family: ${cssFontFamily(fontId)};`,
         }}
         useContainer={true}
       />

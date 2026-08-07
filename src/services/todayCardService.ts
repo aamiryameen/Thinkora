@@ -8,19 +8,7 @@
 import type { Task, Habit, JournalEntry, PomodoroSession } from '../types';
 import { dayKey, type StreakData } from './streakService';
 import type { DailyPulseState } from './dailyPulseService';
-
-const QUOTES: string[] = [
-  'Done is better than perfect.',
-  'Small daily improvements are the key to staggering long-term results.',
-  'Focus on being productive instead of busy.',
-  'Progress, not perfection.',
-  'Every day is a fresh start.',
-  "It's not about having time, it's about making time.",
-  'A journey of a thousand miles begins with a single step.',
-  'Discipline is choosing between what you want now and what you want most.',
-  'You don\'t have to be great to start, but you have to start to be great.',
-  'Show up. Even when you don\'t feel like it.',
-];
+import { getDailyQuote } from '../core/quotes';
 
 export interface TodayCardData {
   /** "YYYY-MM-DD" the card represents (today by default). */
@@ -136,11 +124,8 @@ export function buildTodayCard(opts: BuildOpts): TodayCardData {
     tasksDone + habitsDone + pomodoroCount + (journaledMood ? 1 : 0) + (streakKept ? 1 : 0);
   const framing: 'hero' | 'gentle' = totalActivity >= 3 ? 'hero' : 'gentle';
 
-  // ── Daily quote (deterministic per date) ────────────────────────────────
-  const dayOfYear = Math.floor(
-    (date.getTime() - new Date(date.getFullYear(), 0, 0).getTime()) / 86400000,
-  );
-  const quote = QUOTES[dayOfYear % QUOTES.length];
+  // ── Daily quote (deterministic per date, shared 120-quote rotation) ─────
+  const quote = getDailyQuote(date).text;
 
   const longDate = date.toLocaleDateString(undefined, {
     weekday: 'long',

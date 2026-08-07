@@ -107,6 +107,10 @@ async function setNotes(notes: Note[]): Promise<void> {
           r.category = note.category;
           r.attachmentsRaw = j(note.attachments);
           r.reminderId = note.reminderId ?? null;
+          r.backgroundUri = note.backgroundUri ?? null;
+          r.fontId = note.fontId ?? null;
+          r.archived = note.archived ?? false;
+          r.trashedAt = note.trashedAt ?? null;
           r.updatedAt = note.updatedAt;
         }));
       } else {
@@ -124,6 +128,10 @@ async function setNotes(notes: Note[]): Promise<void> {
           r.category = note.category;
           r.attachmentsRaw = j(note.attachments);
           r.reminderId = note.reminderId ?? null;
+          r.backgroundUri = note.backgroundUri ?? null;
+          r.fontId = note.fontId ?? null;
+          r.archived = note.archived ?? false;
+          r.trashedAt = note.trashedAt ?? null;
           r.createdAt = note.createdAt;
           r.updatedAt = note.updatedAt;
         }));
@@ -158,6 +166,8 @@ async function setFolders(folders: Folder[]): Promise<void> {
           r.name = folder.name;
           r.parentId = folder.parentId ?? null;
           r.order = folder.order;
+          r.color = folder.color ?? null;
+          r.icon = folder.icon ?? null;
         }));
       } else {
         ops.push(foldersCollection.prepareCreate((r) => {
@@ -167,6 +177,8 @@ async function setFolders(folders: Folder[]): Promise<void> {
           r.parentId = folder.parentId ?? null;
           r.order = folder.order;
           r.createdAt = folder.createdAt;
+          r.color = folder.color ?? null;
+          r.icon = folder.icon ?? null;
         }));
       }
     }
@@ -294,6 +306,10 @@ async function setTasks(tasks: Task[]): Promise<void> {
         r.subtasksRaw = j(task.subtasks);
         r.priority = task.priority;
         r.myDay = false;
+        r.backgroundUri = task.backgroundUri ?? null;
+        r.fontId = task.fontId ?? null;
+        r.archived = task.archived ?? false;
+        r.trashedAt = task.trashedAt ?? null;
         r.updatedAt = task.updatedAt;
       };
       if (row) {

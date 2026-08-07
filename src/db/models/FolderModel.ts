@@ -9,6 +9,8 @@ export class FolderModel extends Model {
   @field('parent_id') parentId!: string | null;
   @field('order_index') order!: number;
   @field('created_at') createdAt!: number;
+  @field('color') color!: string | null;
+  @field('icon') icon!: string | null;
 
   toPlain(): Folder {
     return {
@@ -17,6 +19,8 @@ export class FolderModel extends Model {
       parentId: this.parentId ?? null,
       order: this.order,
       createdAt: this.createdAt,
+      color: this.color ?? null,
+      icon: this.icon ?? null,
     };
   }
 }

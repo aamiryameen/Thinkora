@@ -25,6 +25,21 @@ import { BadgesScreen } from '../screens/BadgesScreen';
 import { CategoryManagerScreen } from '../screens/CategoryManagerScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { FoldersScreen } from '../screens/FoldersScreen';
+import { BudgetScreen } from '../screens/BudgetScreen';
+import { BudgetCategoriesScreen } from '../screens/BudgetCategoriesScreen';
+import { BudgetLimitsScreen } from '../screens/BudgetLimitsScreen';
+import { BudgetRecurringScreen } from '../screens/BudgetRecurringScreen';
+import { BudgetReportsScreen } from '../screens/BudgetReportsScreen';
+import { MedicineScreen } from '../screens/MedicineScreen';
+import { MedicineHistoryScreen } from '../screens/MedicineHistoryScreen';
+import { MedicineProfilesScreen } from '../screens/MedicineProfilesScreen';
+import { MedicineInventoryScreen } from '../screens/MedicineInventoryScreen';
+import { MedicineAnalyticsScreen } from '../screens/MedicineAnalyticsScreen';
+import { DoctorVisitsScreen } from '../screens/DoctorVisitsScreen';
+import { WhiteboardsScreen } from '../screens/WhiteboardsScreen';
+import { WhiteboardScreen } from '../screens/WhiteboardScreen';
+import { ArchiveTrashScreen } from '../screens/ArchiveTrashScreen';
 import { AISettingsScreen } from '../screens/AISettingsScreen';
 import { PrivacyPolicyScreen } from '../screens/PrivacyPolicyScreen';
 import { SearchScreen } from '../screens/SearchScreen';
@@ -43,7 +58,20 @@ import { VoiceCommandScreen } from '../screens/VoiceCommandScreen';
 import { NoteCustomizationScreen } from '../screens/NoteCustomizationScreen';
 import { StreakRewardsScreen } from '../screens/StreakRewardsScreen';
 import { BirthdayRecapScreen } from '../screens/BirthdayRecapScreen';
+import { KnowledgeBasesScreen } from '../screens/KnowledgeBasesScreen';
+import { KnowledgeBaseDetailScreen } from '../screens/KnowledgeBaseDetailScreen';
+import { KbChatScreen } from '../screens/KbChatScreen';
+import { KbDocumentScreen } from '../screens/KbDocumentScreen';
+import { KbSearchScreen } from '../screens/KbSearchScreen';
+import { WeatherDetailScreen } from '../screens/WeatherDetailScreen';
+import { DailyPlannerScreen } from '../screens/DailyPlannerScreen';
+import { MorningPlanningScreen } from '../screens/MorningPlanningScreen';
+import { WeeklyPlannerScreen } from '../screens/WeeklyPlannerScreen';
+import { PlannerTemplatesScreen } from '../screens/PlannerTemplatesScreen';
+import { PlannerAnalyticsScreen } from '../screens/PlannerAnalyticsScreen';
+import { PlannerSettingsScreen } from '../screens/PlannerSettingsScreen';
 import { ThinkoraTabBar } from '../components/ThinkoraTabBar';
+import { PremiumScreenGate } from '../components/PremiumScreenGate';
 import { useTheme } from '../context/ThemeContext';
 import { navigationRef } from '../services/navigationService';
 import type { RootStackParamList, HomeTabParamList } from './types';
@@ -60,7 +88,13 @@ function ScanTabPlaceholder() {
 function HomeTabs() {
   return (
     <Tab.Navigator
-      screenOptions={{ headerShown: false }}
+      screenOptions={{
+        headerShown: false,
+        // ThinkoraTabBar positions itself absolutely and screens pad their own
+        // bottoms, so the navigator must not also reserve tab-bar space —
+        // that reserved strip is what pushed the pill up off the bottom.
+        tabBarStyle: { position: 'absolute' },
+      }}
       tabBar={(props) => <ThinkoraTabBar {...props} />}
     >
       <Tab.Screen name="MyDay" component={MyDayScreen} options={{ tabBarLabel: 'Home' }} />
@@ -79,6 +113,59 @@ function HomeTabs() {
       <Tab.Screen name="Notes" component={NoteListScreen} />
       <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ tabBarLabel: 'More' }} />
     </Tab.Navigator>
+  );
+}
+
+
+/** Premium-only screens, gated here so no entry point can bypass the paywall. */
+function GatedBudgetLimits() {
+  return (
+    <PremiumScreenGate feature="budget_limits" title="Budgets">
+      <BudgetLimitsScreen />
+    </PremiumScreenGate>
+  );
+}
+function GatedBudgetRecurring() {
+  return (
+    <PremiumScreenGate feature="budget_recurring" title="Recurring">
+      <BudgetRecurringScreen />
+    </PremiumScreenGate>
+  );
+}
+function GatedBudgetReports() {
+  return (
+    <PremiumScreenGate feature="budget_reports" title="Reports">
+      <BudgetReportsScreen />
+    </PremiumScreenGate>
+  );
+}
+function GatedMedicineInventory() {
+  return (
+    <PremiumScreenGate feature="medicine_inventory" title="Inventory">
+      <MedicineInventoryScreen />
+    </PremiumScreenGate>
+  );
+}
+function GatedMedicineAnalytics() {
+  return (
+    <PremiumScreenGate feature="medicine_analytics" title="Analytics">
+      <MedicineAnalyticsScreen />
+    </PremiumScreenGate>
+  );
+}
+function GatedMedicineProfiles() {
+  return (
+    <PremiumScreenGate feature="medicine_family" title="Family">
+      <MedicineProfilesScreen />
+    </PremiumScreenGate>
+  );
+}
+function GatedDoctorVisits() {
+  // Same gate as Family — visits are only reachable from a profile card.
+  return (
+    <PremiumScreenGate feature="medicine_family" title="Doctor visits">
+      <DoctorVisitsScreen />
+    </PremiumScreenGate>
   );
 }
 
@@ -105,6 +192,21 @@ export function AppNavigator() {
         <Stack.Screen name="CategoryManager" component={CategoryManagerScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Reports" component={ReportsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="Notebooks" component={FoldersScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="Budget" component={BudgetScreen} />
+        <Stack.Screen name="BudgetCategories" component={BudgetCategoriesScreen} />
+        <Stack.Screen name="BudgetLimits" component={GatedBudgetLimits} />
+        <Stack.Screen name="BudgetRecurring" component={GatedBudgetRecurring} />
+        <Stack.Screen name="BudgetReports" component={GatedBudgetReports} />
+        <Stack.Screen name="Medicine" component={MedicineScreen} />
+        <Stack.Screen name="MedicineHistory" component={MedicineHistoryScreen} />
+        <Stack.Screen name="MedicineProfiles" component={GatedMedicineProfiles} />
+        <Stack.Screen name="DoctorVisits" component={GatedDoctorVisits} />
+        <Stack.Screen name="MedicineInventory" component={GatedMedicineInventory} />
+        <Stack.Screen name="MedicineAnalytics" component={GatedMedicineAnalytics} />
+        <Stack.Screen name="Whiteboards" component={WhiteboardsScreen} />
+        <Stack.Screen name="Whiteboard" component={WhiteboardScreen} />
+        <Stack.Screen name="ArchiveTrash" component={ArchiveTrashScreen} />
         <Stack.Screen name="AISettings" component={AISettingsScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ presentation: 'card' }} />
         <Stack.Screen name="Search" component={SearchScreen} options={{ presentation: 'card' }} />
@@ -129,6 +231,20 @@ export function AppNavigator() {
         <Stack.Screen name="TodayCard" component={TodayCardScreen} options={{ presentation: 'modal' }} />
         <Stack.Screen name="MorningBrew" component={MorningBrewScreen} options={{ presentation: 'modal' }} />
         <Stack.Screen name="VoiceCapture" component={VoiceCaptureScreen} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="KnowledgeBases" component={KnowledgeBasesScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="KnowledgeBaseDetail" component={KnowledgeBaseDetailScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="KbChat" component={KbChatScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="KbDocument" component={KbDocumentScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="KbSearch" component={KbSearchScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="WeatherDetail" component={WeatherDetailScreen} options={{ presentation: 'card' }} />
+
+        {/* ── Daily Planner ── */}
+        <Stack.Screen name="DailyPlanner" component={DailyPlannerScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="MorningPlanning" component={MorningPlanningScreen} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="WeeklyPlanner" component={WeeklyPlannerScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="PlannerTemplates" component={PlannerTemplatesScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="PlannerAnalytics" component={PlannerAnalyticsScreen} options={{ presentation: 'card' }} />
+        <Stack.Screen name="PlannerSettings" component={PlannerSettingsScreen} options={{ presentation: 'card' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -15,6 +15,25 @@ import { SharedListModel } from './models/SharedListModel';
 import { TaskTemplateModel } from './models/TaskTemplateModel';
 import { BadgeModel } from './models/BadgeModel';
 import { SettingModel } from './models/SettingModel';
+import { KnowledgeBaseModel } from './models/KnowledgeBaseModel';
+import { KbDocumentModel } from './models/KbDocumentModel';
+import { KbChunkModel } from './models/KbChunkModel';
+import { KbMessageModel } from './models/KbMessageModel';
+import { PlannerBlockModel } from './models/PlannerBlockModel';
+import { PlannerDayModel } from './models/PlannerDayModel';
+import {
+  BudgetCategoryModel,
+  TransactionModel,
+  BudgetModel,
+  RecurringExpenseModel,
+} from './models/BudgetModels';
+import {
+  FamilyProfileModel,
+  MedicineModel,
+  DoseLogModel,
+  DoctorVisitModel,
+} from './models/MedicineModels';
+import { BoardModel, BoardItemModel, BoardVersionModel } from './models/WhiteboardModels';
 
 const adapter = new SQLiteAdapter({
   schema,
@@ -42,6 +61,23 @@ export const database = new Database({
     TaskTemplateModel,
     BadgeModel,
     SettingModel,
+    KnowledgeBaseModel,
+    KbDocumentModel,
+    KbChunkModel,
+    KbMessageModel,
+    PlannerBlockModel,
+    PlannerDayModel,
+    BudgetCategoryModel,
+    TransactionModel,
+    BudgetModel,
+    RecurringExpenseModel,
+    FamilyProfileModel,
+    MedicineModel,
+    DoseLogModel,
+    DoctorVisitModel,
+    BoardModel,
+    BoardItemModel,
+    BoardVersionModel,
   ],
 });
 
@@ -59,3 +95,20 @@ export const sharedListsCollection = database.get<SharedListModel>('shared_lists
 export const taskTemplatesCollection = database.get<TaskTemplateModel>('task_templates');
 export const badgesCollection = database.get<BadgeModel>('badges');
 export const settingsCollection = database.get<SettingModel>('settings');
+export const knowledgeBasesCollection = database.get<KnowledgeBaseModel>('knowledge_bases');
+export const kbDocumentsCollection = database.get<KbDocumentModel>('kb_documents');
+export const kbChunksCollection = database.get<KbChunkModel>('kb_chunks');
+export const kbMessagesCollection = database.get<KbMessageModel>('kb_messages');
+export const plannerBlocksCollection = database.get<PlannerBlockModel>('planner_blocks');
+export const plannerDaysCollection = database.get<PlannerDayModel>('planner_days');
+export const budgetCategoriesCollection = database.get<BudgetCategoryModel>('budget_categories');
+export const transactionsCollection = database.get<TransactionModel>('transactions');
+export const budgetsCollection = database.get<BudgetModel>('budgets');
+export const recurringExpensesCollection = database.get<RecurringExpenseModel>('recurring_expenses');
+export const familyProfilesCollection = database.get<FamilyProfileModel>('family_profiles');
+export const medicinesCollection = database.get<MedicineModel>('medicines');
+export const doseLogsCollection = database.get<DoseLogModel>('dose_logs');
+export const doctorVisitsCollection = database.get<DoctorVisitModel>('doctor_visits');
+export const boardsCollection = database.get<BoardModel>('boards');
+export const boardItemsCollection = database.get<BoardItemModel>('board_items');
+export const boardVersionsCollection = database.get<BoardVersionModel>('board_versions');
